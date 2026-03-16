@@ -69,7 +69,7 @@ def save_session_id(session_id: str) -> None:
 _session_id: str | None = load_session_id()
 
 
-async def stream_message(text: str) -> AsyncIterator[str]:
+async def stream_message(text: str, session_key: str | None = None) -> AsyncIterator[str]:
     """Stream response chunks from OpenClaw /v1/chat/completions (SSE).
 
     Tries SSE streaming first.  If the stream yields no content (can happen
@@ -98,6 +98,8 @@ async def stream_message(text: str) -> AsyncIterator[str]:
             "stream": True,
             "user": _SESSION_USER,
         }
+        if session_key:
+            payload["session_key"] = session_key
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream("POST", url, json=payload, headers=sse_headers) as resp:
                 if resp.status_code != 200:
@@ -141,6 +143,8 @@ async def stream_message(text: str) -> AsyncIterator[str]:
             "messages": [{"role": "user", "content": text}],
             "user": _SESSION_USER,
         }
+        if session_key:
+            payload_ns["session_key"] = session_key
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, json=payload_ns, headers=base_headers)
         if resp.status_code != 200:

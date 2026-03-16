@@ -6,6 +6,9 @@
    States: idle | thinking | curious | talking | surprised
    ─────────────────────────────────────────────────────────────────────────── */
 
+const SPRITE_SCALE_X = 0.022;
+const SPRITE_SCALE_Y = 0.022;
+
 class LainCharacter {
     constructor(containerEl) {
         this._el        = containerEl;
@@ -30,20 +33,35 @@ class LainCharacter {
 
         this._canvas    = null;
         this._ctx       = null;
+
+        // Three.js sprite
+        this._sprite    = null;
+        this._texture   = null;
+        this._scene     = null;
     }
 
     // ── Public API ────────────────────────────────────────────
 
-    init() {
-        this._el.innerHTML = `
-<canvas class="lain-canvas" width="64" height="128"></canvas>
-<div class="lain-nameplate">
-  <div class="center-name">L A I N</div>
-  <div class="center-status" id="hub-lain-status">● PRESENT</div>
-</div>`;
-        this._canvas = this._el.querySelector('.lain-canvas');
-        this._ctx    = this._canvas.getContext('2d');
+    init(scene) {
+        this._canvas = document.createElement('canvas');
+        this._canvas.width = 64;
+        this._canvas.height = 128;
+        this._ctx = this._canvas.getContext('2d');
         this._ctx.imageSmoothingEnabled = false;
+
+        // Render as THREE.Sprite inside the 3D scene
+        if (scene && typeof THREE !== 'undefined') {
+            this._texture = new THREE.CanvasTexture(this._canvas);
+            this._texture.magFilter = THREE.NearestFilter;
+            this._texture.minFilter = THREE.NearestFilter;
+            const mat = new THREE.SpriteMaterial({ map: this._texture, transparent: true });
+            this._sprite = new THREE.Sprite(mat);
+            this._sprite.renderOrder = 1;
+            this._sprite.scale.set(64 * SPRITE_SCALE_X, 128 * SPRITE_SCALE_Y, 1);
+            this._sprite.position.set(0, 0, 0);
+            scene.add(this._sprite);
+            this._scene = scene;
+        }
 
         _injectCSS();
         this._startLoop();
@@ -86,6 +104,12 @@ class LainCharacter {
         this._raf = null;
     }
 
+    resume() {
+        if (!this._raf) {
+            this._startLoop();
+        }
+    }
+
     // ── Animation loop ────────────────────────────────────────
 
     _startLoop() {
@@ -102,6 +126,7 @@ class LainCharacter {
     _drawFrame() {
         const p = this._computeParams();
         _drawLain(this._ctx, p);
+        if (this._texture) this._texture.needsUpdate = true;
     }
 
     // ── Parameter computation ─────────────────────────────────

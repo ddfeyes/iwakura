@@ -107,7 +107,8 @@ class IwakuraChat {
 
     _connect() {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url   = `${proto}//${location.host}/ws/chat`;
+        const topicId = window.getCurrentTopicId ? window.getCurrentTopicId() : 1635;
+        const url   = `${proto}//${location.host}/ws/chat?topic_id=${topicId}`;
 
         try {
             this.ws = new WebSocket(url);

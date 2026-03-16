@@ -3,6 +3,18 @@
    HTML label overlays are positioned by projecting 3D coords to screen space
    ─────────────────────────────────────────────────────────────────────────── */
 
+const NAV_ITEMS = [
+  { id: "lain001", code: "Lda", label: "PSYCHE",    topic_id: 1635, description: "Main consciousness" },
+  { id: "lain002", code: "Lda", label: "DASHBOARD", topic_id: 886,  description: "OI trading data" },
+  { id: "lain003", code: "Lda", label: "IWAKURA",   topic_id: 829,  description: "Platform dev" },
+  { id: "lain004", code: "Lda", label: "NAVI",      topic_id: 1657, description: "DevOps & CI/CD" },
+  { id: "lain005", code: "Lda", label: "STATUS",    topic_id: null, description: "System health" },
+  { id: "lain006", code: "Lda", label: "MEMORY",    topic_id: null, description: "File access" },
+  { id: "lain007", code: "Lda", label: "RESEARCH",  topic_id: 1264, description: "Research log" },
+];
+
+const NAV_COLORS = [0x4488ff, 0xff8c00, 0x00d4aa, 0x8b7cc8, 0x00d4aa, 0x8b7cc8, 0xff4466];
+
 class OrbitalNav {
     constructor(canvas, labelsContainer, onNavigate) {
         this.canvas          = canvas;
@@ -24,15 +36,16 @@ class OrbitalNav {
         this.particles = null;
 
         // Nav items — distributed on a single orbital torus
-        this.navDefs = [
-            { id: 'diary',  label: 'DIARY',  color: 0xff8c00, baseAngle: 0 },
-            { id: 'status', label: 'STATUS', color: 0x00d4aa, baseAngle: Math.PI * 0.5 },
-            { id: 'memory', label: 'MEMORY', color: 0x8b7cc8, baseAngle: Math.PI },
-            { id: 'psyche', label: 'PSYCHE', color: 0x4488ff, baseAngle: Math.PI * 1.5 },
-        ];
+        this.navDefs = NAV_ITEMS.map((item, i) => ({
+            id: item.id,
+            label: item.label,
+            code: item.code,
+            color: NAV_COLORS[i % NAV_COLORS.length],
+            baseAngle: (i / NAV_ITEMS.length) * Math.PI * 2,
+        }));
 
-        // Label elements
-        this.labelEls = {};
+        // Label divs — created once, updated per frame
+        this._labelDivs = [];
     }
 
     // ── Init ──────────────────────────────────────────────────
@@ -77,6 +90,7 @@ class OrbitalNav {
         this._createLainNode();
         this._createOrbitalRings();
         this._createNavNodes();
+        this._initLabels();
         this._createLighting();
     }
 
@@ -151,8 +165,6 @@ class OrbitalNav {
 
     _createNavNodes() {
         this.navMeshes = [];
-        const R = 3.0;          // orbit radius
-        const tilt = Math.PI / 2.2; // ring tilt angle (must match primary ring)
 
         this.navDefs.forEach((def, i) => {
             // Sphere node
@@ -173,16 +185,45 @@ class OrbitalNav {
             const halo = new THREE.Mesh(hGeo, hMat);
             this.scene.add(halo);
             mesh.userData.halo = halo;
+        });
+    }
 
-            // HTML label (from existing DOM element)
-            const labelEl = this.labelsEl.querySelector(`[data-target="${def.id}"]`);
-            if (labelEl) {
-                this.labelEls[def.id] = labelEl;
-                labelEl.addEventListener('click', () => {
-                    if (window.audio) window.audio.playClick();
-                    this.onNavigate(def.id);
-                });
+    _initLabels() {
+        this._labelDivs = [];
+        this.labelsEl.innerHTML = '';
+
+        this.navDefs.forEach(def => {
+            const div = document.createElement('div');
+            div.className = 'nav-label-item';
+            div.dataset.target = def.id;
+
+            const codeDiv = document.createElement('div');
+            codeDiv.className = 'nav-label-code';
+            codeDiv.textContent = def.code || def.id;
+
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'nav-label-name';
+            nameDiv.textContent = def.label;
+
+            if (def.id === 'lain001') {
+                const badge = document.createElement('span');
+                badge.id = 'diary-unread-badge';
+                badge.className = 'unread-badge';
+                badge.style.display = 'none';
+                nameDiv.appendChild(document.createTextNode(' '));
+                nameDiv.appendChild(badge);
             }
+
+            div.appendChild(codeDiv);
+            div.appendChild(nameDiv);
+
+            div.addEventListener('click', () => {
+                if (window.audio) window.audio.playClick();
+                this.onNavigate(def.id);
+            });
+
+            this.labelsEl.appendChild(div);
+            this._labelDivs.push(div);
         });
     }
 
@@ -338,28 +379,27 @@ class OrbitalNav {
         const W = this.renderer.domElement.clientWidth;
         const H = this.renderer.domElement.clientHeight;
 
-        this.navMeshes.forEach((mesh) => {
-            const id = mesh.userData.navId;
-            const el = this.labelEls[id];
-            if (!el) return;
+        this.navMeshes.forEach((mesh, i) => {
+            const div = this._labelDivs[i];
+            if (!div) return;
 
             const pos = mesh.position.clone().project(this.camera);
 
             // Behind camera — hide
             if (pos.z > 1) {
-                el.style.display = 'none';
+                div.style.display = 'none';
                 return;
             }
 
-            el.style.display = '';
+            div.style.display = '';
             const sx = (pos.x + 1) / 2 * W;
             const sy = (-pos.y + 1) / 2 * H;
 
-            el.style.left = sx + 'px';
-            el.style.top  = (sy + 30) + 'px';  // offset below the sphere
+            div.style.left = sx + 'px';
+            div.style.top  = (sy + 30) + 'px';  // offset below the sphere
 
             // Highlight on hover
-            el.classList.toggle('hovered', this.hoveredId === id);
+            div.classList.toggle('hovered', this.hoveredId === mesh.userData.navId);
         });
     }
 
