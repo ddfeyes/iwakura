@@ -235,8 +235,9 @@ window.LainCharacter = LainCharacter;
     s.textContent = `
 .lain-sprite-wrapper { display:flex; flex-direction:column; align-items:center; }
 .lain-sprite-canvas {
-    width: 176px;
-    height: 184px;
+    width: 280px;
+    height: 292px;
+    background: transparent;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
 }

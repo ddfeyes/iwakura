@@ -167,28 +167,15 @@ class OrbitalNav {
         });
     }
 
-    /* — Central Lain presence (wireframe icosahedron + glow) — */
+    /* — Central Lain presence (subtle glow only — sprite handles character) — */
     _createLainNode() {
-        // Wireframe icosahedron — Lain's digital shell
-        const icoGeo = new THREE.IcosahedronGeometry(0.75, 1);
-        const icoMat = new THREE.MeshBasicMaterial({
-            color: 0x00d4aa, wireframe: true,
-            transparent: true, opacity: 0.45,
-        });
-        this.lainMesh = new THREE.Mesh(icoGeo, icoMat);
-        this.scene.add(this.lainMesh);
+        // No wireframe — the LAPK sprite IS Lain now.
+        // Just keep subtle glow shells for atmosphere.
+        this.lainMesh = null;
+        this.lainInner = null;
 
-        // Inner dark core
-        const innerGeo = new THREE.SphereGeometry(0.45, 16, 16);
-        const innerMat = new THREE.MeshBasicMaterial({ color: 0x020210 });
-        this.lainInner = new THREE.Mesh(innerGeo, innerMat);
-        this.scene.add(this.lainInner);
-
-        // Inner bright point (Lain's "spark")
-        const sparkGeo = new THREE.SphereGeometry(0.08, 8, 8);
-        const sparkMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
-        this.lainSpark = new THREE.Mesh(sparkGeo, sparkMat);
-        this.scene.add(this.lainSpark);
+        // Spark removed — Lain is the real sprite
+        this.lainSpark = null;
 
         // Close glow shell — cyan
         const g1 = new THREE.SphereGeometry(1.1, 16, 16);
