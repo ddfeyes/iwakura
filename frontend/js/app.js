@@ -66,7 +66,7 @@
         if (skipGlitch) {
             doSwitch();
         } else {
-            if (window.audio) window.audio.playStatic(0.15);
+            if (window.audio) window.audio.playGlitch();
             // Trigger color aberration on data-glitch elements during transition
             if (window.glitchFX) glitchFX.applyAberrationAll('[data-glitch]', 350);
             glitchFlash(doSwitch);
@@ -327,6 +327,17 @@
         window.audio = new IwakuraAudio();
         window.audio.init();
         window.audio.resume();
+
+        // Restore persisted volume on the slider
+        if (volSlider) {
+            volSlider.value = window.audio.getVolumePercent();
+        }
+
+        // Restore persisted mute state on the button
+        if (volIcon && window.audio.muted) {
+            volIcon.classList.add('muted');
+            volIcon.textContent = '✕';
+        }
     }
 
     document.addEventListener('click',     startAudio, { once: true });
