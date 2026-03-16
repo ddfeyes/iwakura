@@ -108,7 +108,36 @@ class StatusDashboard {
 
     _render(el, data) {
         const { crons = [], ao_sessions, ao_sessions_old_count, openclaw_crons, docker = [], memory = {}, lain = {} } = data;
+        const healthScore = data.health_score ?? 100;
+        const healthLabel = data.health_label || 'OPTIMAL';
         let html = '';
+
+        // ── Health Score Bar (PSX blue-dot style) ────────────────
+        const healthColors = {
+            OPTIMAL:  '#00ffff',
+            STABLE:   '#00ff88',
+            DEGRADED: '#ff8800',
+            CRITICAL: '#ff0000',
+        };
+        const hColor = healthColors[healthLabel] || '#00ffff';
+        const dotCount = 20;
+        const litDots  = Math.round((healthScore / 100) * dotCount);
+        let dotsHtml = '';
+        for (let i = 0; i < dotCount; i++) {
+            const lit = i < litDots;
+            dotsHtml += `<span class="health-dot${lit ? ' lit' : ''}" style="${lit ? 'background:' + hColor + ';box-shadow:0 0 6px ' + hColor : ''}"></span>`;
+        }
+
+        html += `
+            <div class="status-card full health-bar-card">
+                <div class="health-bar-header">
+                    <span class="health-label" style="color:${hColor}">${esc(healthLabel)}</span>
+                    <span class="health-score" style="color:${hColor}">${healthScore}</span>
+                </div>
+                <div class="health-dots">${dotsHtml}</div>
+                <div class="health-sub">SYSTEM HEALTH SCORE</div>
+            </div>
+        `;
 
         // ── System / Memory ──────────────────────────────────────
         const pct  = memory.percent || 0;

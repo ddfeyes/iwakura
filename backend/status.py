@@ -305,6 +305,52 @@ def get_memory_file_stats() -> list[dict]:
     return files
 
 
+def compute_health_score(
+    memory: dict, docker: list, openclaw_crons: list, ao_sessions: list
+) -> dict:
+    """Compute system health score (0-100) and label.
+
+    Deductions:
+      - Memory usage >90% → -30
+      - Any docker container unhealthy → -40
+      - No openclaw crons running → -20
+      - AO sessions stale (all >1h idle) → -10
+    """
+    score = 100
+
+    if memory.get("percent", 0) > 90:
+        score -= 30
+
+    for c in docker:
+        if not (c.get("status") or "").lower().startswith("up"):
+            score -= 40
+            break
+
+    enabled_crons = [c for c in openclaw_crons if c.get("enabled", True)]
+    if not enabled_crons:
+        score -= 20
+
+    if ao_sessions:
+        all_stale = all(
+            (s.get("age_seconds") or 0) > 3600 for s in ao_sessions
+        )
+        if all_stale:
+            score -= 10
+
+    score = max(0, min(100, score))
+
+    if score >= 80:
+        label = "OPTIMAL"
+    elif score >= 50:
+        label = "STABLE"
+    elif score >= 20:
+        label = "DEGRADED"
+    else:
+        label = "CRITICAL"
+
+    return {"health_score": score, "health_label": label}
+
+
 async def get_full_status() -> dict:
     crons, docker, memory, ao_result, openclaw_crons = await asyncio.gather(
         get_cron_status(),
@@ -317,8 +363,14 @@ async def get_full_status() -> dict:
     lain_state = get_lain_state()
     initiative = get_initiative_state()
 
+    health = compute_health_score(
+        memory, docker, openclaw_crons, ao_result["sessions"]
+    )
+
     return {
         "timestamp": datetime.utcnow().isoformat() + "Z",
+        "health_score": health["health_score"],
+        "health_label": health["health_label"],
         "crons": crons,
         "ao_sessions": ao_result["sessions"],
         "ao_sessions_old_count": ao_result["old_count"],
