@@ -135,7 +135,9 @@ body::after {
 }
 
 /* ── Hub Screen ────────────────────────────────────────────── */
-#screen-hub { position: relative; }
+/* NOTE: #screen-hub intentionally inherits position:absolute;inset:0 from
+   .screen — do NOT add position:relative here; that collapses the element
+   to 0px height and hides the Three.js canvas entirely. */
 #hub-canvas {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
