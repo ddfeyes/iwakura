@@ -26,6 +26,12 @@
     let thinkEl       = null;
     let typingEl      = null;
 
+    // ── Streaming state ───────────────────────────────────────
+    let streamEl   = null;
+    let streamBuf  = '';
+    let streamCode = null;
+    let streamTime = null;
+
     // ── Auto-scroll state ─────────────────────────────────────
     let userScrolledUp = false;
 
@@ -129,7 +135,23 @@
                 showThinking();
                 break;
 
+            case 'token':
+                hideThinking();
+                hideTyping();
+                appendToken(msg);
+                break;
+
+            case 'done':
+                hideTyping();
+                finalizeStream();
+                if (msg.sessionId) {
+                    const short = msg.sessionId.slice(0, 16) + '...';
+                    if (sessLabel) sessLabel.textContent = 'SESSION: ' + short;
+                }
+                break;
+
             case 'response':
+                // Legacy fallback
                 hideThinking();
                 hideTyping();
                 addLainMsg(msg);
@@ -142,6 +164,7 @@
             case 'error':
                 hideThinking();
                 hideTyping();
+                finalizeStream();
                 addMsg('error', msg.text || 'SIGNAL LOST');
                 break;
 
@@ -153,6 +176,59 @@
             case 'pong':
                 break;
         }
+    }
+
+    // ── Streaming ─────────────────────────────────────────────
+    function appendToken(msg) {
+        if (!streamEl) {
+            const code = msg.fileCode || fileCode();
+            const time = msg.timestamp || now();
+            streamCode = code;
+            streamTime = time;
+
+            const el = document.createElement('div');
+            el.className = 'chat-msg';
+
+            const hdr = document.createElement('div');
+            hdr.className = 'msg-header';
+            hdr.innerHTML = `
+                <span class="msg-code cyan">${esc(code)}</span>
+                <span class="msg-from purple">LAIN</span>
+                <span class="msg-time">${esc(time)}</span>
+            `;
+
+            const body = document.createElement('div');
+            body.className = 'msg-body lain-msg';
+
+            el.appendChild(hdr);
+            el.appendChild(body);
+            append(el);
+
+            streamEl  = body;
+            streamBuf = '';
+        }
+
+        const line = msg.text || '';
+        streamBuf += (streamBuf ? '\n' : '') + line;
+        streamEl.textContent = streamBuf + ' ▋';
+        scrollBottom();
+    }
+
+    function finalizeStream() {
+        if (!streamEl) return;
+        streamEl.textContent = streamBuf;
+        const tags = extractTags(streamBuf);
+        if (tags.length) {
+            const tEl = document.createElement('div');
+            tEl.className = 'msg-tags';
+            tEl.innerHTML = tags.map(t => `<span class="tag">${esc(t)}</span>`).join('');
+            streamEl.parentElement.appendChild(tEl);
+        }
+        streamEl   = null;
+        streamBuf  = '';
+        streamCode = null;
+        streamTime = null;
+        scrollBottom();
     }
 
     // ── Rendering ─────────────────────────────────────────────
@@ -324,6 +400,58 @@
             .replace(/"/g, '&quot;');
     }
 
+    // ── History loading ───────────────────────────────────────
+    async function loadHistory() {
+        try {
+            const res = await fetch('/api/diary/history');
+            if (!res.ok) return;
+            const msgs = await res.json();
+            if (!Array.isArray(msgs) || msgs.length === 0) return;
+
+            const sep = document.createElement('div');
+            sep.className = 'history-separator';
+            sep.textContent = '── PREVIOUS SESSION ──';
+            if (messagesEl) messagesEl.appendChild(sep);
+
+            msgs.forEach(renderHistoryMsg);
+            scrollBottom();
+        } catch (e) {
+            console.error('diary history load:', e);
+        }
+    }
+
+    function renderHistoryMsg(m) {
+        if (!m || !m.role || !m.text) return;
+        const el = document.createElement('div');
+        el.className = 'chat-msg msg-historical';
+
+        if (m.role === 'user') {
+            el.innerHTML = `
+                <div class="msg-header">
+                    <span class="msg-code orange">${esc(m.code || '')}</span>
+                    <span class="msg-from orange">IVAN</span>
+                    <span class="msg-time">${esc(m.timestamp || '')}</span>
+                </div>
+                <div class="msg-body user-msg">${esc(m.text)}</div>
+            `;
+        } else {
+            const hdr = document.createElement('div');
+            hdr.className = 'msg-header';
+            hdr.innerHTML = `
+                <span class="msg-code cyan">${esc(m.code || '')}</span>
+                <span class="msg-from purple">LAIN</span>
+                <span class="msg-time">${esc(m.timestamp || '')}</span>
+            `;
+            const body = document.createElement('div');
+            body.className = 'msg-body lain-msg';
+            body.textContent = m.text;
+            el.appendChild(hdr);
+            el.appendChild(body);
+        }
+
+        if (messagesEl) messagesEl.appendChild(el);
+    }
+
     // ── Event listeners ───────────────────────────────────────
     sendBtn.addEventListener('click', doSend);
 
@@ -338,6 +466,6 @@
     });
 
     // ── Boot ──────────────────────────────────────────────────
-    connect();
+    loadHistory().then(() => connect());
 
 })();
