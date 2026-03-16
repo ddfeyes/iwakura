@@ -10,6 +10,7 @@
     let currentScreen = 'boot';
     let orbNav        = null;
     let chat          = null;
+    let memory        = null;
     let psyche        = null;
 
     // ── DOM refs ──────────────────────────────────────────────
@@ -45,11 +46,14 @@
             if (name === 'hub')    initHub();
             if (name === 'diary')  initDiary();
             if (name === 'status') loadStatus();
-            if (name === 'memory') loadMemory();
+            if (name === 'memory') initMemory();
             if (name === 'psyche') loadPsyche();
 
             // Stop hub Three.js when leaving
             if (name !== 'hub' && orbNav) orbNav.stop();
+
+            // Stop memory keyboard nav when leaving memory
+            if (name !== 'memory' && memory) memory.stop();
 
             // Stop psyche auto-refresh when leaving psyche
             if (name !== 'psyche' && psyche) psyche.stop();
@@ -338,89 +342,9 @@
 
     // ── Memory Screen ─────────────────────────────────────────
 
-    async function loadMemory() {
-        const listEl   = document.getElementById('memory-list');
-        const viewerEl = document.getElementById('memory-viewer');
-        if (!listEl) return;
-
-        listEl.innerHTML = '<div class="screen-loading purple">RETRIEVING FILES<span class="loading-dots"></span></div>';
-        viewerEl.innerHTML = '<div class="viewer-empty"><span class="viewer-empty-label">SELECT FILE TO ACCESS</span></div>';
-
-        try {
-            const res  = await fetch('/api/memory');
-            const data = await res.json();
-            const files = data.files || [];
-
-            if (!files.length) {
-                listEl.innerHTML = '<div class="screen-loading dim">NO MEMORY FILES FOUND</div>';
-                return;
-            }
-
-            listEl.innerHTML = '';
-            files.forEach((f, i) => {
-                const item = document.createElement('div');
-                item.className = 'mem-file';
-                const code = memCode(i);
-                item.innerHTML = `
-                    <div class="mem-file-name">${esc(f.name)}</div>
-                    <div class="mem-file-meta">
-                        <span class="orange">${code}</span>
-                        <span>${esc(f.size || '')} · ${esc(f.type || '')}</span>
-                    </div>
-                `;
-                item.addEventListener('click', () => {
-                    document.querySelectorAll('.mem-file').forEach(el => el.classList.remove('active'));
-                    item.classList.add('active');
-                    if (window.audio) window.audio.playClick();
-                    loadMemoryFile(f.name, viewerEl, code);
-                });
-                listEl.appendChild(item);
-            });
-        } catch (e) {
-            listEl.innerHTML = '<div class="screen-loading red">ERROR LOADING FILES</div>';
-        }
-    }
-
-    async function loadMemoryFile(name, viewerEl, code) {
-        viewerEl.innerHTML = '<div class="screen-loading purple">ACCESSING<span class="loading-dots"></span></div>';
-
-        try {
-            const res  = await fetch('/api/memory/' + encodeURIComponent(name));
-            const data = await res.json();
-
-            viewerEl.innerHTML = `
-                <div class="mem-view-hdr">
-                    <span class="mem-view-title">${esc(name)}</span>
-                    <span class="mem-view-code">${code}</span>
-                </div>
-                <div class="mem-view-body">${renderMemContent(data.content || '', name)}</div>
-            `;
-        } catch (e) {
-            viewerEl.innerHTML = `<div class="mem-view-hdr"><span class="mem-view-title red">ERROR: CANNOT ACCESS ${esc(name)}</span></div>`;
-        }
-    }
-
-    function renderMemContent(content, name) {
-        if (name.endsWith('.md')) {
-            // Simple markdown-ish render
-            return content
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
-                .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
-                .replace(/^### (.+)$/gm, '<h3>$3</h3>'.replace('$3','$1'))
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/`([^`]+)`/g,     '<code>$1</code>')
-                .replace(
-                    /\b([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3})\b/g,
-                    '<span class="mem-kw">$1</span>'
-                );
-        }
-        return esc(content);
-    }
-
-    function memCode(i) {
-        const prefixes = ['Lda', 'Tda', 'Wld', 'Nda', 'Ira'];
-        return prefixes[i % prefixes.length] + String(i * 7 + 14).padStart(3, '0');
+    function initMemory() {
+        if (!memory) memory = new IwakuraMemory();
+        memory.init();
     }
 
     // ── Psyche Screen ─────────────────────────────────────────
@@ -510,5 +434,5 @@
     });
 
     // Expose for debugging
-    window.iwakura = { showScreen, loadStatus, loadMemory, loadPsyche, getPsyche: () => psyche };
+    window.iwakura = { showScreen, loadStatus, initMemory, loadPsyche, getPsyche: () => psyche };
 })();

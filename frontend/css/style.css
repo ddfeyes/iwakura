@@ -524,6 +524,17 @@ body::after {
     background: rgba(139,124,200,0.2);
     border-left: 2px solid var(--purple);
 }
+.mem-file.mem-cursor {
+    background: rgba(0,255,136,0.08);
+    border-left: 2px solid var(--green);
+    outline: none;
+}
+.mem-file.mem-cursor .mem-file-name { color: var(--green); }
+.mem-file.mem-cursor.active {
+    background: rgba(139,124,200,0.25);
+    border-left: 2px solid var(--purple);
+}
+.mem-file.mem-cursor.active .mem-file-name { color: var(--purple); }
 .mem-file-name { font-family: var(--font-mono); font-size: 11px; color: var(--purple); margin-bottom: 2px; }
 .mem-file-meta { font-size: 9px; color: var(--dim); display: flex; justify-content: space-between; }
 
