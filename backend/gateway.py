@@ -1,13 +1,9 @@
 """OpenClaw gateway client — HTTP /v1/chat/completions SSE proxy.
 
-Replaces the previous `openclaw agent` CLI approach which hangs when stdout
-is piped (Node.js TTY detection blocks the subprocess indefinitely).
-
-The Gateway exposes an OpenAI-compatible POST /v1/chat/completions endpoint.
-We call it via httpx with stream=True to get SSE tokens as they arrive.
-If SSE yields no content (can happen when the primary model is overloaded and
-the Gateway silently retries), we fall back to a non-streaming request so the
-caller always receives a response.
+Replaces the previous `openclaw agent` CLI approach which hangs when
+stdout is piped (Node.js TTY detection blocks the process).
+The /v1/chat/completions endpoint on the Gateway streams SSE tokens
+synchronously, which is exactly what the WebSocket chat flow needs.
 """
 import json
 import logging
@@ -23,11 +19,9 @@ LAIN_AGENT_ID   = "lain"
 SESSION_FILE    = pathlib.Path(__file__).parent / ".session_id"
 OPENCLAW_CONFIG = pathlib.Path.home() / ".openclaw" / "openclaw.json"
 
-# Stable user key — Gateway derives a persistent session from this string
+# Stable session user key — Gateway derives a persistent session from this
 _SESSION_USER = "iwakura-lain"
 
-
-# ── Config helpers ────────────────────────────────────────────────────────────
 
 def _read_config() -> dict:
     try:
@@ -44,17 +38,14 @@ def get_gateway_url() -> str:
 
 
 def get_hook_token() -> str:
-    """Return the auth token for the Gateway's HTTP endpoints."""
     token = os.environ.get("OPENCLAW_TOKEN") or os.environ.get("OPENCLAW_HOOK_TOKEN")
     if token:
         return token
     cfg = _read_config()
-    # gateway.auth.token is the credential used by /v1/chat/completions
+    # Gateway auth token takes precedence over hooks token
     gw_token = cfg.get("gateway", {}).get("auth", {}).get("token", "")
     return gw_token or cfg.get("hooks", {}).get("token", "")
 
-
-# ── Session persistence ───────────────────────────────────────────────────────
 
 def load_session_id() -> str | None:
     try:
@@ -74,30 +65,33 @@ def save_session_id(session_id: str) -> None:
         pass
 
 
+# Global session state
 _session_id: str | None = load_session_id()
 
 
-# ── Gateway calls ─────────────────────────────────────────────────────────────
-
 async def stream_message(text: str) -> AsyncIterator[str]:
-    """Yield response text chunks from /v1/chat/completions (SSE).
+    """Stream response chunks from OpenClaw /v1/chat/completions (SSE).
 
-    Primary path: SSE streaming — yields chunks as they arrive.
-    Fallback path: non-streaming — used when SSE yields no content (model
-    overload causes Gateway to close the stream without tokens).
-    Updates _session_id with the completion ID on success.
+    Tries SSE streaming first.  If the stream yields no content (can happen
+    when the primary model is overloaded and the gateway silently retries),
+    falls back to a non-streaming request and yields the full response as one
+    chunk.  The completion ID is stored as the session ID.
     """
     global _session_id
 
     url   = get_gateway_url() + "/v1/chat/completions"
     token = get_hook_token()
-    auth  = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    base_headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
 
     completion_id: str | None = None
     got_content = False
 
-    # ── 1. SSE streaming ─────────────────────────────────────────
+    # ── 1. SSE streaming attempt ─────────────────────────────────
     try:
+        sse_headers = {**base_headers, "Accept": "text/event-stream"}
         payload = {
             "model": f"openclaw:{LAIN_AGENT_ID}",
             "messages": [{"role": "user", "content": text}],
@@ -105,8 +99,7 @@ async def stream_message(text: str) -> AsyncIterator[str]:
             "user": _SESSION_USER,
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream("POST", url, json=payload,
-                                     headers={**auth, "Accept": "text/event-stream"}) as resp:
+            async with client.stream("POST", url, json=payload, headers=sse_headers) as resp:
                 if resp.status_code != 200:
                     body = await resp.aread()
                     logger.error(f"SSE {resp.status_code}: {body.decode()[:300]}")
@@ -121,14 +114,18 @@ async def stream_message(text: str) -> AsyncIterator[str]:
                             chunk = json.loads(data)
                             if not completion_id:
                                 completion_id = chunk.get("id")
-                            content = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
+                            content = (
+                                chunk.get("choices", [{}])[0]
+                                .get("delta", {})
+                                .get("content")
+                            )
                             if content:
                                 got_content = True
                                 yield content
                         except Exception as e:
                             logger.warning(f"SSE parse: {e}")
     except Exception as e:
-        logger.error(f"stream_message SSE: {e}")
+        logger.error(f"stream_message SSE error: {e}")
 
     if got_content:
         if completion_id and completion_id != _session_id:
@@ -136,8 +133,8 @@ async def stream_message(text: str) -> AsyncIterator[str]:
             save_session_id(completion_id)
         return
 
-    # ── 2. Non-streaming fallback ────────────────────────────────
-    logger.info("SSE yielded no content — falling back to non-streaming request")
+    # ── 2. Non-streaming fallback (model overloaded → gateway retries) ───
+    logger.info("SSE yielded no content; falling back to non-streaming")
     try:
         payload_ns = {
             "model": f"openclaw:{LAIN_AGENT_ID}",
@@ -145,17 +142,19 @@ async def stream_message(text: str) -> AsyncIterator[str]:
             "user": _SESSION_USER,
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, json=payload_ns, headers=auth)
+            resp = await client.post(url, json=payload_ns, headers=base_headers)
         if resp.status_code != 200:
-            logger.error(f"non-stream fallback {resp.status_code}: {resp.text[:300]}")
+            logger.error(f"non-streaming fallback {resp.status_code}: {resp.text[:300]}")
             return
         data = resp.json()
-        completion_id = data.get("id") or completion_id
-        response_text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        completion_id = data.get("id", "") or completion_id
+        response_text = (
+            data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        )
         if response_text:
             yield response_text
     except Exception as e:
-        logger.error(f"stream_message fallback: {e}")
+        logger.error(f"stream_message fallback error: {e}")
         return
 
     if completion_id and completion_id != _session_id:
@@ -164,12 +163,15 @@ async def stream_message(text: str) -> AsyncIterator[str]:
 
 
 async def send_message(text: str) -> dict | None:
-    """Send a message and return full response dict (non-streaming)."""
+    """Send a message and return full response (non-streaming fallback)."""
     global _session_id
 
-    url   = get_gateway_url() + "/v1/chat/completions"
-    token = get_hook_token()
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    url     = get_gateway_url() + "/v1/chat/completions"
+    token   = get_hook_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
     payload = {
         "model": f"openclaw:{LAIN_AGENT_ID}",
         "messages": [{"role": "user", "content": text}],
@@ -180,7 +182,7 @@ async def send_message(text: str) -> dict | None:
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(url, json=payload, headers=headers)
     except Exception as e:
-        logger.error(f"send_message: {e}")
+        logger.error(f"send_message error: {e}")
         return None
 
     if resp.status_code != 200:
@@ -190,18 +192,20 @@ async def send_message(text: str) -> dict | None:
     try:
         data = resp.json()
     except Exception as e:
-        logger.error(f"send_message JSON: {e}")
+        logger.error(f"send_message JSON parse: {e}")
         return None
 
     completion_id = data.get("id", "")
-    response_text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+    text_response = (
+        data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    )
 
     if completion_id and completion_id != _session_id:
         _session_id = completion_id
         save_session_id(completion_id)
 
     return {
-        "text": response_text,
+        "text": text_response,
         "sessionId": completion_id or _session_id or "",
         "runId": completion_id,
     }

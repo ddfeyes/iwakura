@@ -184,6 +184,7 @@ class IwakuraChat {
                 this._finalizeStream(msg);
                 this._incrementUnread();
                 if (this.onSessionChange) this.onSessionChange(msg.sessionId);
+                if (window.audio) window.audio.playBeep();
                 break;
 
             case 'response':
@@ -193,6 +194,7 @@ class IwakuraChat {
                 this._addLainMsg(msg);
                 this._incrementUnread();
                 if (this.onSessionChange) this.onSessionChange(msg.sessionId);
+                if (window.audio) window.audio.playBeep();
                 break;
 
             case 'error':
@@ -246,7 +248,7 @@ class IwakuraChat {
             this._streamBuf = '';
         }
 
-        // Append the new chunk directly — SSE yields raw text fragments, not lines
+        // Append the new chunk (SSE yields raw text fragments, not lines)
         this._streamBuf += msg.text || '';
 
         // Render with a blinking cursor at the end
@@ -389,12 +391,9 @@ class IwakuraChat {
         if (this._isDiaryActive) return;
         this._unreadCount++;
         this._updateBadge();
-        if (window.audio) window.audio.playNewMessage();
     }
 
     _updateBadge() {
-        // Sync global so nav.js can read it every animation frame
-        window._diaryUnreadCount = this._unreadCount;
         const badge = document.getElementById('diary-unread-badge');
         if (!badge) return;
         badge.textContent = this._unreadCount > 0 ? String(this._unreadCount) : '';
