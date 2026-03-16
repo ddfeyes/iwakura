@@ -62,6 +62,7 @@
 
             // Stop hub Three.js when leaving
             if (name !== 'hub' && orbNav) orbNav.stop();
+            if (name !== 'hub' && lainChar) lainChar.stop();
 
             // Stop memory keyboard nav when leaving memory
             if (name !== 'memory' && memory) memory.stop();
@@ -169,15 +170,6 @@
 
         if (!canvas) return;
 
-        // Init Lain character (once)
-        if (!lainChar) {
-            const charEl = document.getElementById('lain-char-container');
-            if (charEl && window.LainCharacter) {
-                lainChar = new LainCharacter(charEl);
-                lainChar.init();
-            }
-        }
-
         if (!orbNav) {
             orbNav = new OrbitalNav(canvas, labelsDiv, (id) => {
                 if (lainChar) lainChar.onNavigate();
@@ -190,8 +182,16 @@
                 else       lainChar.onLeaveNav();
             };
             orbNav.init();
+
+            // Init Lain as THREE.Sprite inside the Three.js scene (scene exists after init())
+            if (!lainChar && window.LainCharacter) {
+                const charEl = document.getElementById('lain-char-container');
+                lainChar = new LainCharacter(charEl);
+                lainChar.init(orbNav.scene);
+            }
         } else {
             orbNav.resume();
+            if (lainChar) lainChar.resume();
         }
 
         // Load session info for footer

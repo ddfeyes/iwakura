@@ -1,155 +1,173 @@
-/* ── LainCharacter — PSX LAPK sprite system ──────────────────────────────────
-   Exact same approach as lainTSX: load LAPK atlas PNGs (2048x2048),
-   each containing 5x5 grid of 352x367 frames. Swap textures at 10 FPS
-   using Three.js Sprite (billboard plane).
+/* ── LainCharacter — THREE.Sprite inside OrbitalNav scene ───────────────────
+   Exact lainTSX approach: Lain is a THREE.Sprite (billboard) positioned at
+   the center of the 3D scene. LAPK atlas PNGs are loaded, frames extracted
+   with chroma-key, wrapped as THREE.CanvasTexture, then swapped on the
+   SpriteMaterial at 10 FPS.
 
-   Animation data from lain_animations.json — each animation is an array
-   of frame indices into the global LAPK frame pool.
+   Usage:
+     const lainChar = new LainCharacter(nameplateEl);
+     await lainChar.init(threeScene);    // must call after OrbitalNav.start()
    ─────────────────────────────────────────────────────────────────────────── */
 
-const LAPK_ATLAS_DIM = 2048;
-const LAPK_FRAME_W = 352;
-const LAPK_FRAME_H = 367;
-const FRAMES_PER_ROW = 5;
-const FRAMES_PER_COL = 5;
+const LAPK_ATLAS_DIM   = 2048;
+const LAPK_FRAME_W     = 352;
+const LAPK_FRAME_H     = 367;
+const FRAMES_PER_ROW   = 5;
+const FRAMES_PER_COL   = 5;
 const FRAMES_PER_ATLAS = FRAMES_PER_ROW * FRAMES_PER_COL;
-const ATLAS_COUNT = 26;
-const LAIN_FPS = 10;
-const FRAME_MS = 1000 / LAIN_FPS;
+const ATLAS_COUNT      = 26;
+const LAIN_FPS         = 10;
+const FRAME_MS         = 1000 / LAIN_FPS;
 
-// Idle animation pool (indices into LainAnimationKind)
-const IDLE_ANIMATIONS = [
-    14, // Pray
-    20, // Fix_Sleeves
-    4,  // Think
-    19, // Stretch_2
-    18, // Stretch
-    3,  // Spin
-    17, // Scratch_Head
-    5,  // Blush
-    2,  // Naruto
-    24, // Hug_Self
-    23, // Count
-    22, // Angry
-    16, // Ponder
-    10, // Lean_Forward
-    11, // Lean_Left
-    12, // Lean_Right
-    13, // Look_Around
-    15, // Play_With_Hair
-    6,  // Eureka
-    21, // Open_The_Next
-];
+// proportional_scale = 7  →  scale_factor = 7/1000 = 0.007
+// sprite width  = 352 * 0.007 = 2.464
+// sprite height = 367 * 0.007 = 2.569
+const SPRITE_SCALE_X = LAPK_FRAME_W * 0.007;
+const SPRITE_SCALE_Y = LAPK_FRAME_H * 0.007;
 
-const STAND_ANIM = 9; // LainAnimationKind.Stand
+// Animation indices (match LainAnimationKind enum in lain.ts)
+const STAND_ANIM = 9;
+const IDLE_ANIMATIONS = [14,20,4,19,18,3,17,5,2,24,23,22,16,10,11,12,13,15,6,21];
 
 class LainCharacter {
-    constructor(containerEl) {
-        this._el = containerEl;
-        this._frames = [];        // THREE.Texture[] — all LAPK frames
-        this._animations = null;  // lain_animations.json
-        this._loaded = false;
-        this._currentAnim = STAND_ANIM;
-        this._frameIndex = 0;
-        this._lastFrameTime = 0;
-        this._idleTimer = 0;
-        this._sprite = null;      // THREE.Sprite displayed on screen
-        this._canvas = null;
-        this._ctx = null;
-        this._rafId = null;
+    constructor(nameplateEl) {
+        this._nameplateEl   = nameplateEl;  // DOM element for "L A I N" label
+        this._scene         = null;         // THREE.Scene
+        this._sprite        = null;         // THREE.Sprite
+        this._frameTextures = [];           // THREE.CanvasTexture[]
+        this._animations    = null;         // lain_animations.json
+
+        this._loaded       = false;
+        this._currentAnim  = STAND_ANIM;
+        this._frameIndex   = 0;
+        this._lastFrameMs  = 0;
+        this._idleTimer    = 0;
+        this._rafId        = null;
     }
 
-    async init() {
-        // Build container
-        this._el.innerHTML = '';
-        const wrapper = document.createElement('div');
-        wrapper.className = 'lain-sprite-wrapper';
+    // ── Init ───────────────────────────────────────────────────────────────
 
-        this._canvas = document.createElement('canvas');
-        this._canvas.width = LAPK_FRAME_W;
-        this._canvas.height = LAPK_FRAME_H;
-        this._canvas.className = 'lain-sprite-canvas';
-        this._ctx = this._canvas.getContext('2d');
+    async init(scene) {
+        this._scene = scene;
 
-        wrapper.appendChild(this._canvas);
+        // Build nameplate (DOM overlay — stays centered via CSS)
+        if (this._nameplateEl) {
+            this._nameplateEl.innerHTML = `
+                <div class="lain-nameplate">
+                    <div class="center-name">L A I N</div>
+                    <div class="center-status" id="hub-lain-status">&#9679; LOADING...</div>
+                </div>`;
+        }
 
-        const nameplate = document.createElement('div');
-        nameplate.className = 'lain-nameplate';
-        nameplate.innerHTML = `
-            <div class="center-name">L A I N</div>
-            <div class="center-status" id="hub-lain-status">● LOADING...</div>
-        `;
-        wrapper.appendChild(nameplate);
-        this._el.appendChild(wrapper);
-
-        // Load animation data
+        // Load animation JSON
         try {
-            const resp = await fetch('/sprites/lain/lain_animations.json');
-            this._animations = await resp.json();
+            const r = await fetch('/sprites/lain/lain_animations.json');
+            this._animations = await r.json();
         } catch (e) {
-            console.error('Failed to load lain_animations.json', e);
+            console.error('[LainChar] Failed to load lain_animations.json', e);
             return;
         }
 
-        // Load all LAPK atlases and extract frames
+        // Load all LAPK atlases → extract frames → CanvasTexture
         await this._loadAtlases();
 
-        this._loaded = true;
-        this._lastFrameTime = performance.now();
-        this._idleTimer = 8000 + Math.random() * 12000;
+        // Get first frame texture (Stand anim, frame 0)
+        const firstTex = this._getFrameTexture(STAND_ANIM, 0);
+        if (!firstTex) {
+            console.error('[LainChar] No frame textures loaded');
+            return;
+        }
+
+        // Create THREE.Sprite
+        const mat = new THREE.SpriteMaterial({
+            map: firstTex,
+            transparent: true,
+            alphaTest: 0.02,
+            depthTest: true,
+        });
+        this._sprite = new THREE.Sprite(mat);
+        this._sprite.scale.set(SPRITE_SCALE_X, SPRITE_SCALE_Y, 1);
+        this._sprite.position.set(0, -0.15, 0);
+        // Render behind ring nodes (default renderOrder 0)
+        this._sprite.renderOrder = -1;
+        this._scene.add(this._sprite);
+
+        this._loaded      = true;
+        this._lastFrameMs = performance.now();
+        this._idleTimer   = 8000 + Math.random() * 12000;
 
         const statusEl = document.getElementById('hub-lain-status');
-        if (statusEl) statusEl.textContent = '● PRESENT';
+        if (statusEl) statusEl.textContent = '\u25cf PRESENT';
 
-        // Start render loop
         this._loop(performance.now());
     }
 
+    // ── Atlas Loading ─────────────────────────────────────────────────────
+
     async _loadAtlases() {
-        const loadImage = (url) => new Promise((resolve, reject) => {
+        const loadImg = url => new Promise((res, rej) => {
             const img = new Image();
-            img.onload = () => resolve(img);
-            img.onerror = reject;
+            img.onload  = () => res(img);
+            img.onerror = () => rej(new Error('Failed: ' + url));
             img.src = url;
         });
 
-        // Load all 26 atlases
-        for (let i = 0; i < ATLAS_COUNT; i++) {
+        let loaded = 0;
+        for (let ai = 0; ai < ATLAS_COUNT; ai++) {
             try {
-                const img = await loadImage(`/sprites/lain/lain_frames_${i}.png`);
+                const img = await loadImg(`/sprites/lain/lain_frames_${ai}.png`);
 
-                // Extract 5x5 frames from this atlas
-                for (let r = 0; r < FRAMES_PER_COL; r++) {
-                    for (let c = 0; c < FRAMES_PER_ROW; c++) {
-                        const frameCanvas = document.createElement('canvas');
-                        frameCanvas.width = LAPK_FRAME_W;
-                        frameCanvas.height = LAPK_FRAME_H;
-                        const fCtx = frameCanvas.getContext('2d');
-                        fCtx.drawImage(img,
-                            c * LAPK_FRAME_W, r * LAPK_FRAME_H,
+                for (let row = 0; row < FRAMES_PER_COL; row++) {
+                    for (let col = 0; col < FRAMES_PER_ROW; col++) {
+                        // Extract frame into its own canvas with chroma key
+                        const fc  = document.createElement('canvas');
+                        fc.width  = LAPK_FRAME_W;
+                        fc.height = LAPK_FRAME_H;
+                        const ctx = fc.getContext('2d');
+                        ctx.drawImage(img,
+                            col * LAPK_FRAME_W, row * LAPK_FRAME_H,
                             LAPK_FRAME_W, LAPK_FRAME_H,
-                            0, 0, LAPK_FRAME_W, LAPK_FRAME_H
-                        );
+                            0, 0, LAPK_FRAME_W, LAPK_FRAME_H);
 
-                        const location = i * FRAMES_PER_ATLAS + r * FRAMES_PER_ROW + c;
-                        this._frames[location] = frameCanvas;
+                        // Chroma key: make near-black pixels (PSX bg) transparent
+                        const id = ctx.getImageData(0, 0, LAPK_FRAME_W, LAPK_FRAME_H);
+                        const d  = id.data;
+                        for (let p = 0; p < d.length; p += 4) {
+                            if (d[p] < 15 && d[p+1] < 15 && d[p+2] < 15) d[p+3] = 0;
+                        }
+                        ctx.putImageData(id, 0, 0);
+
+                        const globalIdx = ai * FRAMES_PER_ATLAS + row * FRAMES_PER_ROW + col;
+                        const tex = new THREE.CanvasTexture(fc);
+                        tex.needsUpdate = true;
+                        this._frameTextures[globalIdx] = tex;
+                        loaded++;
                     }
                 }
             } catch (e) {
-                console.warn(`Failed to load lain_frames_${i}.png`, e);
+                console.warn(`[LainChar] Atlas ${ai} failed:`, e.message);
             }
         }
+        console.log(`[LainChar] Loaded ${loaded} LAPK frame textures`);
+    }
 
-        console.log(`Loaded ${this._frames.filter(Boolean).length} LAPK frames`);
+    // ── Animation ─────────────────────────────────────────────────────────
+
+    _getFrameTexture(animIdx, frameIdx) {
+        if (!this._animations) return null;
+        const frames = this._animations[animIdx];
+        if (!frames || frames.length === 0) return null;
+        const lapkIdx = frames[frameIdx % frames.length];
+        return this._frameTextures[lapkIdx] || null;
     }
 
     _loop(now) {
         this._rafId = requestAnimationFrame(t => this._loop(t));
-        if (!this._loaded) return;
+        if (!this._loaded || !this._sprite) return;
 
-        const dt = now - this._lastFrameTime;
+        const dt = now - this._lastFrameMs;
         if (dt < FRAME_MS) return;
-        this._lastFrameTime = now;
+        this._lastFrameMs = now;
 
         const animFrames = this._animations[this._currentAnim];
         if (!animFrames || animFrames.length === 0) return;
@@ -157,40 +175,21 @@ class LainCharacter {
         // Advance frame
         this._frameIndex++;
         if (this._frameIndex >= animFrames.length) {
-            // Animation finished — return to Stand
             this._currentAnim = STAND_ANIM;
-            this._frameIndex = 0;
+            this._frameIndex  = 0;
         }
 
-        // Get the LAPK frame index
-        const lapkIndex = animFrames[this._frameIndex];
-        const frameCanvas = this._frames[lapkIndex];
-        if (!frameCanvas) return;
-
-        // Draw to display canvas
-        this._ctx.clearRect(0, 0, LAPK_FRAME_W, LAPK_FRAME_H);
-
-        // Float effect
-        const floatY = Math.sin(now / 800) * 4;
-
-        this._ctx.save();
-        this._ctx.translate(0, floatY);
-        this._ctx.drawImage(frameCanvas, 0, 0);
-
-        // Remove black background from PSX sprites (make transparent)
-        const imgData = this._ctx.getImageData(0, 0, LAPK_FRAME_W, LAPK_FRAME_H);
-        const d = imgData.data;
-        for (let i = 0; i < d.length; i += 4) {
-            // If pixel is very dark (near-black), make transparent
-            if (d[i] < 15 && d[i+1] < 15 && d[i+2] < 15) {
-                d[i+3] = 0;
-            }
+        // Swap texture on sprite material
+        const tex = this._getFrameTexture(this._currentAnim, this._frameIndex);
+        if (tex) {
+            this._sprite.material.map = tex;
+            this._sprite.material.needsUpdate = true;
         }
-        this._ctx.putImageData(imgData, 0, 0);
 
-        this._ctx.restore();
+        // Gentle float
+        this._sprite.position.y = -0.15 + Math.sin(now / 800) * 0.03;
 
-        // Idle timer — play random animation
+        // Idle timer
         if (this._currentAnim === STAND_ANIM) {
             this._idleTimer -= dt;
             if (this._idleTimer <= 0) {
@@ -204,56 +203,52 @@ class LainCharacter {
         const idx = IDLE_ANIMATIONS[Math.floor(Math.random() * IDLE_ANIMATIONS.length)];
         if (this._animations[idx] && this._animations[idx].length > 0) {
             this._currentAnim = idx;
-            this._frameIndex = 0;
+            this._frameIndex  = 0;
         }
     }
 
-    // ── Public API (called by nav.js / app.js) ──
+    // ── Public API ────────────────────────────────────────────────────────
 
     setState(s) {
-        // Map states to animation indices
-        const stateMap = {
-            'idle': STAND_ANIM,
-            'thinking': 4,     // Think
-            'curious': 13,     // Look_Around
-            'surprised': 6,    // Eureka
-            'talking': STAND_ANIM, // Stand while talking
-        };
-        const anim = stateMap[s] || STAND_ANIM;
+        const map = { idle: STAND_ANIM, thinking: 4, curious: 13, surprised: 6, talking: STAND_ANIM };
+        const anim = (map[s] !== undefined) ? map[s] : STAND_ANIM;
         if (anim !== this._currentAnim) {
             this._currentAnim = anim;
-            this._frameIndex = 0;
+            this._frameIndex  = 0;
         }
     }
 
     onHoverNav()  { this.setState('curious'); }
     onLeaveNav()  { this.setState('idle'); }
     onNavigate()  { this.setState('surprised'); }
-    onTalkStart() { /* could add talk animation here */ }
+    onTalkStart() {}
     onTalkEnd()   { this.setState('idle'); }
 
     stop() {
-        if (this._rafId) cancelAnimationFrame(this._rafId);
+        if (this._rafId) { cancelAnimationFrame(this._rafId); this._rafId = null; }
+    }
+
+    resume() {
+        if (this._loaded && !this._rafId) {
+            this._lastFrameMs = performance.now();
+            this._loop(performance.now());
+        }
     }
 }
 
 window.LainCharacter = LainCharacter;
 
-// ── CSS ──
-(function() {
+// ── Nameplate CSS ─────────────────────────────────────────────────────────
+(function () {
     if (document.getElementById('lain-char-css')) return;
     const s = document.createElement('style');
     s.id = 'lain-char-css';
     s.textContent = `
-.lain-sprite-wrapper { display:flex; flex-direction:column; align-items:center; }
-.lain-sprite-canvas {
-    width: 280px;
-    height: 292px;
-    background: transparent;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
+.lain-nameplate {
+    text-align: center;
+    pointer-events: none;
+    margin-top: 160px;
 }
-.lain-nameplate { text-align:center; margin-top:4px; }
 .center-name {
     font-family: 'Share Tech Mono', monospace;
     font-size: 1.1rem;
@@ -264,7 +259,7 @@ window.LainCharacter = LainCharacter;
 .center-status {
     font-size: 0.7rem;
     color: #00d4aa;
-    margin-top: 2px;
+    margin-top: 4px;
     letter-spacing: 2px;
 }
 `;
