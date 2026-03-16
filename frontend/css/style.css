@@ -1343,7 +1343,7 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
 }
 .lain-float {
     animation: lain-float 5.5s ease-in-out infinite;
-    transform-origin: 60px 125px;
+    transform-origin: 50px 175px;
 }
 
 /* Body breathing: subtle scale + rise */
@@ -1353,7 +1353,7 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
 }
 .lain-breathe {
     animation: lain-breathe 4s ease-in-out infinite;
-    transform-origin: 60px 180px;
+    transform-origin: 50px 130px;
     transform-box: fill-box;
 }
 
@@ -1448,7 +1448,7 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
 }
 .lain-char-inner[data-state="thinking"] .lain-head {
     animation: lain-think-tilt 0.5s ease forwards;
-    transform-origin: 60px 115px;
+    transform-origin: 50% 97%;
     transform-box: fill-box;
 }
 
@@ -1459,7 +1459,7 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
 }
 .lain-char-inner[data-state="curious"] .lain-head {
     animation: lain-curious-tilt 0.3s ease forwards;
-    transform-origin: 60px 115px;
+    transform-origin: 50% 97%;
     transform-box: fill-box;
 }
 .lain-char-inner[data-state="curious"] .lc-brow-normal { display: none; }
