@@ -637,7 +637,7 @@ async def get_wired_events() -> list[dict]:
     mem_pct = mem_usage.get("percent", 0)
     mem_level = "alert" if mem_pct > 85 else ("warn" if mem_pct > 70 else "info")
     events.append({
-        "id": f"sys-mem",
+        "id": "sys-mem",
         "ts": now.isoformat() + "Z",
         "source": "SYSTEM",
         "level": mem_level,
