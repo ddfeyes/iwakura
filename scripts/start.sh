@@ -34,7 +34,7 @@ start() {
     fi
 
     cd "$BACKEND_DIR"
-    nohup python main.py >> "$LOG_FILE" 2>&1 &
+    nohup python3 main.py >> "$LOG_FILE" 2>&1 &
     local pid=$!
     echo "$pid" > "$PID_FILE"
 
@@ -65,7 +65,7 @@ stop() {
 
 fg_mode() {
     cd "$BACKEND_DIR"
-    exec python main.py
+    exec python3 main.py
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
