@@ -67,6 +67,8 @@
             doSwitch();
         } else {
             if (window.audio) window.audio.playStatic(0.15);
+            // Trigger color aberration on data-glitch elements during transition
+            if (window.glitchFX) glitchFX.applyAberrationAll('[data-glitch]', 350);
             glitchFlash(doSwitch);
         }
     }
@@ -76,6 +78,12 @@
     function runBoot() {
         const rain = new DataRain(document.getElementById('boot-rain'));
         rain.start();
+
+        // Matrix-style reveal for the boot logo
+        const logoEl = document.querySelector('.logo-text');
+        if (window.glitchFX && logoEl) {
+            glitchFX.bootReveal(logoEl, 'IWAKURA', { charDelay: 25, cycles: 5, cycleSpeed: 40 });
+        }
 
         const dotsEl     = document.getElementById('boot-progress-dots');
         const statusText = document.getElementById('boot-status-text');
@@ -328,6 +336,14 @@
     // ── Boot ──────────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', () => {
+        // Init glitch effects system
+        window.glitchFX = new GlitchEffects();
+        glitchFX.enableScanlines(0.08);
+        glitchFX.enableTextGlitch('[data-glitch]');
+        glitchFX.enableAberrationOnHover('[data-glitch]');
+        // Start flicker after boot sequence completes
+        setTimeout(() => glitchFX.startFlicker(), 4000);
+
         // Show boot screen (already marked active in HTML)
         runBoot();
     });

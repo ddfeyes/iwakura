@@ -812,6 +812,69 @@ body::after {
 .red    { color: var(--red); }
 .dim    { color: var(--dim); }
 
+/* ── Glitch Effects System ─────────────────────────────────── */
+
+/* CRT Overlay — animated scanlines, configurable via --scanline-opacity */
+.crt-overlay {
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, var(--scanline-opacity, 0.08)) 2px,
+        rgba(0, 0, 0, var(--scanline-opacity, 0.08)) 4px
+    );
+    pointer-events: none;
+    z-index: 9998;
+    animation: scanline-scroll 8s linear infinite;
+}
+.crt-overlay.no-anim { animation: none; }
+
+@keyframes scanline-scroll {
+    from { background-position: 0 0; }
+    to   { background-position: 0 4px; }
+}
+
+/* Screen Flicker — brief brightness pulse on body */
+@keyframes flicker-pulse {
+    0%   { filter: brightness(1); }
+    20%  { filter: brightness(1.4); }
+    50%  { filter: brightness(0.7); }
+    80%  { filter: brightness(1.2); }
+    100% { filter: brightness(1); }
+}
+body.flicker { animation: flicker-pulse 100ms forwards; }
+
+/* Color Aberration — RGB channel split (hover / transition) */
+.aberration {
+    text-shadow:
+        -1px 0 rgba(255, 0, 0, 0.45),
+        1px  0 rgba(0, 0, 255, 0.45) !important;
+}
+
+/* Psyche / container glitch flash — horizontal jitter + hue shift */
+@keyframes glitch-flash {
+    0%   { transform: translateX(0);    filter: hue-rotate(0deg); }
+    15%  { transform: translateX(-3px); filter: hue-rotate(20deg); }
+    30%  { transform: translateX(3px);  filter: hue-rotate(-20deg); }
+    50%  { transform: translateX(-2px); filter: hue-rotate(15deg); }
+    70%  { transform: translateX(2px);  filter: hue-rotate(-10deg); }
+    85%  { transform: translateX(-1px); filter: hue-rotate(5deg); }
+    100% { transform: translateX(0);    filter: hue-rotate(0deg); }
+}
+.glitch-flash { animation: glitch-flash 300ms steps(6) forwards; }
+
+/* Reduced-motion overrides */
+@media (prefers-reduced-motion: reduce) {
+    .crt-overlay         { animation: none; }
+    body.flicker         { animation: none; filter: none; }
+    .glitch-flash        { animation: none; }
+    .aberration          { text-shadow: none !important; }
+    .screen.entering     { animation: none; opacity: 1; filter: none; }
+    .screen.exiting      { animation: none; opacity: 0; }
+}
+
 /* ── Animations ────────────────────────────────────────────── */
 @keyframes blink {
     0%, 100% { opacity: 1; }

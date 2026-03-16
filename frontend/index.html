@@ -20,11 +20,11 @@
     <div class="boot-ui">
         <div class="boot-logo">
             <span class="logo-bracket">[</span>
-            <span class="logo-text">IWAKURA</span>
+            <span class="logo-text" data-glitch>IWAKURA</span>
             <span class="logo-bracket">]</span>
         </div>
         <div class="boot-divider"></div>
-        <div class="boot-authorize">AUTHORIZE USER</div>
+        <div class="boot-authorize" data-glitch>AUTHORIZE USER</div>
         <div class="boot-cursor">▋</div>
         <div class="boot-status-text" id="boot-status-text">INITIALIZING...</div>
         <div class="boot-progress">
@@ -63,11 +63,11 @@
     <div class="hub-ui">
         <div class="hub-header">
             <span class="header-code green">Nda001</span>
-            <span class="header-title">THE WIRED // ACCESS POINT</span>
+            <span class="header-title" data-glitch>THE WIRED // ACCESS POINT</span>
             <span class="header-code green">Ira042</span>
         </div>
         <div class="hub-center-label">
-            <div class="center-name">L A I N</div>
+            <div class="center-name" data-glitch>L A I N</div>
             <div class="center-status" id="hub-lain-status">● PRESENT</div>
         </div>
         <div class="hub-footer">
@@ -86,7 +86,7 @@
 <div id="screen-diary" class="screen">
     <div class="screen-header">
         <button class="back-btn" data-target="hub">◀ RETURN</button>
-        <span class="screen-title">DIARY // DIRECT LINE</span>
+        <span class="screen-title" data-glitch>DIARY // DIRECT LINE</span>
         <span class="screen-code green">Lda020</span>
     </div>
     <div class="diary-messages" id="diary-messages">
@@ -114,7 +114,7 @@
 <div id="screen-status" class="screen">
     <div class="screen-header">
         <button class="back-btn" data-target="hub">◀ RETURN</button>
-        <span class="screen-title">STATUS // SYSTEM MONITOR</span>
+        <span class="screen-title" data-glitch>STATUS // SYSTEM MONITOR</span>
         <span class="screen-code green">Tda040</span>
     </div>
     <div class="status-grid" id="status-content">
@@ -130,7 +130,7 @@
 <div id="screen-memory" class="screen">
     <div class="screen-header">
         <button class="back-btn" data-target="hub">◀ RETURN</button>
-        <span class="screen-title">MEMORY // FILE ACCESS</span>
+        <span class="screen-title" data-glitch>MEMORY // FILE ACCESS</span>
         <span class="screen-code green">Wld033</span>
     </div>
     <div class="memory-layout">
@@ -149,7 +149,7 @@
 <div id="screen-psyche" class="screen">
     <div class="screen-header">
         <button class="back-btn" data-target="hub">◀ RETURN</button>
-        <span class="screen-title">PSYCHE // INTERNAL STATE</span>
+        <span class="screen-title" data-glitch>PSYCHE // INTERNAL STATE</span>
         <span class="screen-code green">Ira007</span>
     </div>
     <div class="psyche-grid" id="psyche-content">
@@ -163,6 +163,9 @@
     <input type="range" id="volume-slider" min="0" max="100" value="30">
     <span class="vol-label">VOL</span>
 </div>
+
+<!-- CRT animated scanlines overlay (managed by GlitchEffects) -->
+<div id="crt-overlay" class="crt-overlay"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="js/data-rain.js"></script>
