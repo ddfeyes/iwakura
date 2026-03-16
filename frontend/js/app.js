@@ -86,6 +86,11 @@
             if (chat) {
                 chat.setActive(name === 'diary');
             }
+
+            // Hash routing: keep URL in sync (skip boot)
+            if (name !== 'boot') {
+                history.replaceState(null, '', '#' + name);
+            }
         };
 
         if (skipGlitch) {
@@ -150,13 +155,19 @@
             }
         }, 500);
 
-        // Transition to hub after ~3.2s
+        // Transition to hub after ~3.2s; then honour any URL hash
         setTimeout(() => {
             clearInterval(dotInterval);
             clearInterval(msgInterval);
             rain.stop();
             if (window.audio) window.audio.playBoot();
             showScreen('hub', false);
+
+            const hash = location.hash.replace('#', '');
+            if (hash && screens[hash] && hash !== 'boot') {
+                // Small delay so hub finishes entering before we swap
+                setTimeout(() => showScreen(hash, true), 80);
+            }
         }, 3200);
     }
 
@@ -423,6 +434,14 @@
     document.addEventListener('click',     startAudio, { once: true });
     document.addEventListener('keydown',   startAudio, { once: true });
     document.addEventListener('touchstart', startAudio, { once: true });
+
+    // Hash routing: browser back/forward + manual URL changes
+    window.addEventListener('hashchange', () => {
+        const hash = location.hash.replace('#', '');
+        if (hash && screens[hash] && hash !== currentScreen && hash !== 'boot') {
+            showScreen(hash);
+        }
+    });
 
     // ── Boot ──────────────────────────────────────────────────
 
