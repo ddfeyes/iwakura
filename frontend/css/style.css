@@ -569,12 +569,154 @@ body::after {
 /* ── Psyche Screen ─────────────────────────────────────────── */
 .psyche-grid {
     flex: 1; overflow-y: auto;
-    padding: 16px;
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 14px; align-content: start;
+    padding: 0 20px 20px;
+    display: flex; flex-direction: column;
+    gap: 0;
     scrollbar-width: thin;
     scrollbar-color: var(--purple-dim) var(--bg-deep);
 }
+.psyche-grid::-webkit-scrollbar { width: 5px; }
+.psyche-grid::-webkit-scrollbar-track { background: var(--bg-deep); }
+.psyche-grid::-webkit-scrollbar-thumb { background: var(--purple-dim); }
+
+/* Glitch flash on refresh */
+@keyframes psyche-glitch {
+    0%   { opacity: 1; filter: brightness(1); }
+    20%  { opacity: 0.6; filter: brightness(2) hue-rotate(20deg); }
+    40%  { opacity: 1; filter: brightness(1.4); }
+    60%  { opacity: 0.8; filter: brightness(1) hue-rotate(-10deg); }
+    100% { opacity: 1; filter: brightness(1); }
+}
+.psyche-glitch { animation: psyche-glitch 0.2s steps(4) forwards; }
+
+/* Header bar */
+.psy-header-bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 0 8px;
+    font-family: var(--font-mono); font-size: 11px;
+    flex-shrink: 0;
+}
+.psy-file-code { letter-spacing: 0.1em; }
+.psy-title {
+    flex: 1; text-align: center;
+    font-family: var(--font-px); font-size: 8px;
+    color: var(--orange); letter-spacing: 0.4em;
+}
+.psy-ts { font-size: 10px; letter-spacing: 0.08em; }
+
+/* Section rule (horizontal divider) */
+.psy-rule {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--orange-dim), transparent);
+    margin: 6px 0;
+    flex-shrink: 0;
+}
+
+/* Section title */
+.psy-section-title {
+    font-family: var(--font-px); font-size: 7px;
+    color: var(--orange); letter-spacing: 0.35em;
+    padding: 8px 0 4px;
+    flex-shrink: 0;
+}
+
+/* Section / task rows */
+.psy-section { padding: 4px 0; }
+
+.psy-section-row {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 3px 0;
+    font-family: var(--font-mono); font-size: 12px;
+}
+.psy-section-row.indent { padding-left: 16px; }
+
+.psy-label {
+    color: var(--green); font-size: 11px; flex-shrink: 0;
+    min-width: 52px;
+}
+.psy-val { color: var(--white); font-size: 12px; flex: 1; }
+.psy-val.cyan { color: var(--cyan); }
+.psy-val.dim  { color: var(--dim); }
+.psy-badge {
+    color: var(--orange); font-family: var(--font-mono); font-size: 10px;
+    flex-shrink: 0; margin-left: auto;
+}
+.psy-key {
+    color: var(--cyan); font-size: 10px; flex-shrink: 0; min-width: 120px;
+    font-family: var(--font-mono);
+}
+
+/* Wave status rows */
+.psy-wave-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 3px 0;
+    font-family: var(--font-mono); font-size: 12px;
+}
+.psy-wave-arrow { color: var(--orange); flex-shrink: 0; }
+.psy-wave-label {
+    color: var(--white); min-width: 80px; flex-shrink: 0; font-size: 11px;
+}
+.wave-dots {
+    display: flex; gap: 5px; align-items: center;
+    flex: 1; flex-wrap: wrap;
+}
+.dot-filled { color: var(--orange); font-size: 13px; line-height: 1; }
+.dot-empty  { color: var(--dim);    font-size: 13px; line-height: 1; }
+.psy-wave-status {
+    font-size: 10px; flex-shrink: 0; letter-spacing: 0.05em;
+    font-family: var(--font-mono);
+}
+.psy-wave-status.dim    { color: var(--dim); }
+.psy-wave-status.orange { color: var(--orange); }
+
+/* Open PR items */
+.psy-pr-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 0;
+    font-family: var(--font-mono); font-size: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.psy-pr-item:last-of-type { border-bottom: none; }
+.psy-pr-code  { font-size: 10px; flex-shrink: 0; }
+.psy-pr-arrow { font-size: 11px; flex-shrink: 0; }
+.psy-pr-label {
+    color: var(--white); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Notes */
+.psy-note {
+    padding: 3px 0 3px 10px;
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--dim);
+    border-left: 2px solid rgba(139,124,200,0.4);
+    margin: 2px 0;
+}
+
+/* Metrics line */
+.psy-metrics {
+    padding: 6px 0;
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--dim); letter-spacing: 0.05em;
+}
+
+/* Preformatted text blocks */
+.psy-pretext {
+    font-family: var(--font-vt); font-size: 17px;
+    line-height: 1.5; white-space: pre-wrap;
+    padding: 6px 0;
+    max-height: 200px; overflow-y: auto;
+}
+.psy-pretext-cyan   { color: rgba(0,212,170,0.75); }
+.psy-pretext-purple { color: rgba(139,124,200,0.85); }
+
+/* Session footer */
+.psy-session {
+    padding: 10px 0 4px;
+    font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em;
+}
+
+/* Legacy card styles kept for backward compatibility */
 .psy-card {
     background: rgba(15,15,53,0.6);
     border: 1px solid rgba(139,124,200,0.3);
@@ -592,8 +734,7 @@ body::after {
     font-family: var(--font-mono); font-size: 12px;
     border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-.psy-key { color: var(--cyan); flex-shrink: 0; min-width: 130px; font-size: 10px; }
-.psy-val { color: var(--white); }
+.psy-field:last-child { border-bottom: none; }
 .psy-val.hi { color: var(--orange); }
 .psy-val.lo { color: var(--dim); }
 

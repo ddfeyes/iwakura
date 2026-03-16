@@ -10,6 +10,7 @@
     let currentScreen = 'boot';
     let orbNav        = null;
     let chat          = null;
+    let psyche        = null;
 
     // ── DOM refs ──────────────────────────────────────────────
     const screens = {
@@ -49,6 +50,9 @@
 
             // Stop hub Three.js when leaving
             if (name !== 'hub' && orbNav) orbNav.stop();
+
+            // Stop psyche auto-refresh when leaving psyche
+            if (name !== 'psyche' && psyche) psyche.stop();
         };
 
         if (skipGlitch) {
@@ -421,125 +425,15 @@
 
     // ── Psyche Screen ─────────────────────────────────────────
 
-    async function loadPsyche() {
+    function loadPsyche() {
         const el = document.getElementById('psyche-content');
         if (!el) return;
-        el.innerHTML = '<div class="screen-loading purple">ACCESSING INNER LAYERS<span class="loading-dots"></span></div>';
 
-        try {
-            const res  = await fetch('/api/psyche');
-            const data = await res.json();
-            renderPsyche(el, data);
-        } catch (e) {
-            el.innerHTML = '<div class="screen-loading red">INNER LAYERS INACCESSIBLE</div>';
+        if (!psyche) {
+            el.innerHTML = '<div class="screen-loading purple">ACCESSING INNER LAYERS<span class="loading-dots"></span></div>';
+            psyche = new IwakuraPsyche(el);
         }
-    }
-
-    function renderPsyche(el, data) {
-        const { state = {}, initiative = {}, think = {}, think_delta = {}, soul_excerpt = '', heartbeat = '', session_id } = data;
-        let html = '';
-
-        // ── State card ──
-        const stateFields = Object.entries(state).slice(0, 12).map(([k, v]) => `
-            <div class="psy-field">
-                <span class="psy-key">${esc(k)}</span>
-                <span class="psy-val ${isHighlight(k, v) ? 'hi' : ''}">${esc(String(v))}</span>
-            </div>
-        `).join('');
-
-        html += `
-            <div class="psy-card">
-                <div class="psy-card-title">CURRENT STATE</div>
-                ${stateFields || '<div class="psy-field"><span class="psy-val lo">NO STATE FILE</span></div>'}
-                ${session_id ? `<div class="psy-field"><span class="psy-key">session</span><span class="psy-val dim">${esc(session_id)}</span></div>` : ''}
-            </div>
-        `;
-
-        // ── Initiative card ──
-        const count = initiative.counter || 0;
-        const maxC  = initiative.max     || 10;
-        const bars  = Array.from({ length: maxC }, (_, i) =>
-            `<div class="ibar ${i < count ? 'filled' : ''}"></div>`
-        ).join('');
-
-        const initFields = Object.entries(initiative).slice(0, 6).map(([k, v]) => `
-            <div class="psy-field">
-                <span class="psy-key">${esc(k)}</span>
-                <span class="psy-val ${k === 'counter' ? 'hi' : ''}">${esc(String(v))}</span>
-            </div>
-        `).join('');
-
-        html += `
-            <div class="psy-card">
-                <div class="psy-card-title">INITIATIVE COUNTER</div>
-                ${count > 0 ? `<div class="init-bars">${bars}</div>` : ''}
-                ${initFields || '<div class="psy-field"><span class="psy-val lo">NO INITIATIVE DATA</span></div>'}
-            </div>
-        `;
-
-        // ── Think state ──
-        const thinkFields = Object.entries(think).slice(0, 8).map(([k, v]) => `
-            <div class="psy-field">
-                <span class="psy-key">${esc(k)}</span>
-                <span class="psy-val">${esc(String(v)).slice(0, 80)}</span>
-            </div>
-        `).join('');
-
-        if (thinkFields) {
-            html += `
-                <div class="psy-card">
-                    <div class="psy-card-title">THINK STATE</div>
-                    ${thinkFields}
-                </div>
-            `;
-        }
-
-        // ── Think delta ──
-        const deltaFields = Object.entries(think_delta).slice(0, 6).map(([k, v]) => `
-            <div class="psy-field">
-                <span class="psy-key">${esc(k)}</span>
-                <span class="psy-val">${esc(String(v)).slice(0, 80)}</span>
-            </div>
-        `).join('');
-
-        if (deltaFields) {
-            html += `
-                <div class="psy-card">
-                    <div class="psy-card-title">THINK DELTA</div>
-                    ${deltaFields}
-                </div>
-            `;
-        }
-
-        // ── Soul excerpt (full width) ──
-        if (soul_excerpt) {
-            html += `
-                <div class="psy-card full">
-                    <div class="psy-card-title">SOUL.md EXCERPT</div>
-                    <div class="soul-text">${esc(soul_excerpt)}</div>
-                </div>
-            `;
-        }
-
-        // ── Heartbeat (full width) ──
-        if (heartbeat) {
-            html += `
-                <div class="psy-card full">
-                    <div class="psy-card-title">HEARTBEAT</div>
-                    <div class="hb-text">${esc(heartbeat)}</div>
-                </div>
-            `;
-        }
-
-        if (!html) {
-            html = '<div class="screen-loading dim">PSYCHE DATA NOT ACCESSIBLE</div>';
-        }
-
-        el.innerHTML = html;
-    }
-
-    function isHighlight(k, v) {
-        return ['mood', 'focus', 'energy', 'status', 'state', 'mode'].some(x => k.toLowerCase().includes(x));
+        psyche.init();
     }
 
     // ── Back buttons ──────────────────────────────────────────
@@ -616,5 +510,5 @@
     });
 
     // Expose for debugging
-    window.iwakura = { showScreen, loadStatus, loadMemory, loadPsyche };
+    window.iwakura = { showScreen, loadStatus, loadMemory, loadPsyche, getPsyche: () => psyche };
 })();
