@@ -26,9 +26,10 @@ class OrbitalNav {
         // Nav items — distributed on a single orbital torus
         this.navDefs = [
             { id: 'diary',  label: 'DIARY',  color: 0xff8c00, baseAngle: 0 },
-            { id: 'status', label: 'STATUS', color: 0x00d4aa, baseAngle: Math.PI * 0.5 },
-            { id: 'memory', label: 'MEMORY', color: 0x8b7cc8, baseAngle: Math.PI },
-            { id: 'psyche', label: 'PSYCHE', color: 0x4488ff, baseAngle: Math.PI * 1.5 },
+            { id: 'status', label: 'STATUS', color: 0x00d4aa, baseAngle: Math.PI * 0.4 },
+            { id: 'memory', label: 'MEMORY', color: 0x8b7cc8, baseAngle: Math.PI * 0.8 },
+            { id: 'psyche', label: 'PSYCHE', color: 0x4488ff, baseAngle: Math.PI * 1.2 },
+            { id: 'tasks',  label: 'TASKS',  color: 0x00ff88, baseAngle: Math.PI * 1.6 },
         ];
 
         // Label elements

@@ -46,7 +46,7 @@ class IwakuraHotkeys {
 
         if (this._isTyping()) return;
 
-        const screenMap = { '1': 'diary', '2': 'status', '3': 'memory', '4': 'psyche' };
+        const screenMap = { '1': 'diary', '2': 'status', '3': 'memory', '4': 'psyche', '5': 'tasks' };
 
         if (screenMap[e.key]) {
             if (window.audio) window.audio.playClick();

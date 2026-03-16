@@ -389,6 +389,92 @@ async def api_psyche():
     return JSONResponse(data)
 
 
+@app.get("/api/tasks")
+async def api_tasks():
+    state_path = LAIN_MEMORY / "STATE.yaml"
+    tasks_out = []
+    metrics_out = {
+        "active_count": 0,
+        "done_count": 0,
+        "paused_count": 0,
+        "tests_passing": None,
+        "prs_merged": None,
+        "features_shipped": None,
+    }
+
+    if state_path.exists():
+        try:
+            raw = yaml.safe_load(state_path.read_text()) or {}
+        except Exception:
+            raw = {}
+
+        tasks_raw = raw.get("tasks", [])
+        if isinstance(tasks_raw, dict):
+            tasks_raw = [tasks_raw]
+        elif not isinstance(tasks_raw, list):
+            tasks_raw = []
+
+        for t in tasks_raw:
+            if not isinstance(t, dict):
+                continue
+
+            status_raw = str(t.get("status", "")).lower()
+            if status_raw in ("in_progress", "running"):
+                status = "RUNNING"
+                metrics_out["active_count"] += 1
+            elif status_raw in ("paused",):
+                status = "PAUSED"
+                metrics_out["paused_count"] += 1
+            elif status_raw in ("done", "complete", "completed"):
+                status = "DONE"
+                metrics_out["done_count"] += 1
+            else:
+                status = status_raw.upper() or "PENDING"
+
+            done_list = t.get("done", [])
+            if not isinstance(done_list, list):
+                done_list = []
+            remaining_list = t.get("remaining", [])
+            if not isinstance(remaining_list, list):
+                remaining_list = []
+
+            stats = t.get("stats", {}) or {}
+            done_count = int(stats.get("tasks_done", len(done_list)))
+            remaining_count = len(remaining_list)
+            total = done_count + remaining_count
+            pct = round(done_count / total * 100, 1) if total > 0 else 0.0
+
+            # Extract top-level metrics from stats
+            if metrics_out["tests_passing"] is None and stats.get("tests_passing") is not None:
+                metrics_out["tests_passing"] = stats["tests_passing"]
+            if metrics_out["prs_merged"] is None and stats.get("prs_merged_total") is not None:
+                metrics_out["prs_merged"] = stats["prs_merged_total"]
+            if metrics_out["features_shipped"] is None and stats.get("features_shipped") is not None:
+                metrics_out["features_shipped"] = str(stats["features_shipped"])
+
+            # Wave status summary
+            wave_status = t.get("wave_status", [])
+            if not isinstance(wave_status, list):
+                wave_status = []
+
+            tasks_out.append({
+                "id": str(t.get("id", "")),
+                "goal": str(t.get("goal", ""))[:120],
+                "status": status,
+                "progress": {
+                    "done": done_count,
+                    "remaining": remaining_count,
+                    "pct": pct,
+                },
+                "recent_done": [str(x) for x in done_list[-3:]],
+                "next_remaining": [str(x) for x in remaining_list[:3]],
+                "wave_status": [str(x) for x in wave_status[-3:]],
+                "stats": {str(k): str(v) for k, v in stats.items()},
+            })
+
+    return JSONResponse({"tasks": tasks_out, "metrics": metrics_out})
+
+
 @app.get("/api/session")
 async def api_session():
     return JSONResponse({"sessionId": gateway.get_current_session_id()})

@@ -13,6 +13,7 @@
     let memory        = null;
     let psyche        = null;
     let statusDash    = null;
+    let tasksDash     = null;
 
     // ── DOM refs ──────────────────────────────────────────────
     const screens = {
@@ -22,6 +23,7 @@
         status: document.getElementById('screen-status'),
         memory: document.getElementById('screen-memory'),
         psyche: document.getElementById('screen-psyche'),
+        tasks:  document.getElementById('screen-tasks'),
     };
 
     // ── Screen management ─────────────────────────────────────
@@ -49,6 +51,7 @@
             if (name === 'status') loadStatus();
             if (name === 'memory') initMemory();
             if (name === 'psyche') loadPsyche();
+            if (name === 'tasks')  loadTasks();
 
             // Stop hub Three.js when leaving
             if (name !== 'hub' && orbNav) orbNav.stop();
@@ -61,6 +64,9 @@
 
             // Stop status auto-refresh when leaving status
             if (name !== 'status' && statusDash) statusDash.stop();
+
+            // Stop tasks auto-refresh when leaving tasks
+            if (name !== 'tasks' && tasksDash) tasksDash.stop();
 
             // Unread badge: mark diary active/inactive
             if (chat) {
@@ -276,6 +282,21 @@
         psyche.init();
     }
 
+    // ── Tasks Screen ──────────────────────────────────────────
+
+    function loadTasks() {
+        const el = document.getElementById('tasks-content');
+        if (!el) return;
+
+        if (!tasksDash) {
+            el.innerHTML = '<div class="screen-loading cyan">LOADING TASK DATA<span class="loading-dots"></span></div>';
+            tasksDash = new TasksScreen(el);
+        } else {
+            tasksDash.stop();
+        }
+        tasksDash.start();
+    }
+
     // ── Back buttons ──────────────────────────────────────────
 
     document.querySelectorAll('.back-btn').forEach(btn => {
@@ -295,6 +316,14 @@
         statusRefresh.addEventListener('click', () => {
             if (window.audio) window.audio.playClick();
             if (statusDash) statusDash.refresh();
+        });
+    }
+
+    const tasksRefresh = document.getElementById('tasks-refresh');
+    if (tasksRefresh) {
+        tasksRefresh.addEventListener('click', () => {
+            if (window.audio) window.audio.playClick();
+            if (tasksDash) tasksDash.refresh();
         });
     }
 
@@ -374,7 +403,7 @@
     // Expose for debugging and hotkeys
     window.iwakura = {
         showScreen,
-        loadStatus, initMemory, loadPsyche,
+        loadStatus, initMemory, loadPsyche, loadTasks,
         getPsyche: () => psyche,
         currentScreen: () => currentScreen,
         clearDiaryUnread: () => { if (chat) chat.clearUnread(); },
