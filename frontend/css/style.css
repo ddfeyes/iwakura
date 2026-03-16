@@ -135,9 +135,7 @@ body::after {
 }
 
 /* ── Hub Screen ────────────────────────────────────────────── */
-/* NOTE: #screen-hub intentionally inherits position:absolute;inset:0 from
-   .screen — do NOT add position:relative here; that collapses the element
-   to 0px height and hides the Three.js canvas entirely. */
+#screen-hub { position: relative; }
 #hub-canvas {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
@@ -346,7 +344,6 @@ body::after {
     border-left-color: var(--cyan);
     background: rgba(0,25,30,0.6);
     color: var(--cyan-dim); font-size: 22px;
-    white-space: pre-wrap;
 }
 .msg-body.error {
     border-left-color: var(--red);
@@ -1294,195 +1291,19 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
 }
 .nav-label-item[data-target="wired"] .nav-label-code { color: #ffcc00; }
 
-/* ── Lain Animated Character ───────────────────────────────── */
-
-/* Hub center label is now driven by LainCharacter — holds SVG + nameplate */
-/* The container also has .lain-char-inner for state+blink CSS selectors.   */
-/* Override the base .hub-center-label (line ~228) — transform is baked into
-   the animation keyframes to avoid property conflict.                       */
-.hub-center-label {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: none;   /* will be set by animation keyframes */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    user-select: none;
+/* ── Lain SVG Silhouette ───────────────────────────────────── */
+.lain-silhouette-wrap {
+    width: 90px;
+    height: 225px;
+    margin: 0 auto 10px;
     pointer-events: none;
-    z-index: 2;
-    text-align: center;
+    animation: lain-float 7s ease-in-out infinite;
+    opacity: 0.9;
 }
 
-/* The SVG character — large focal point */
-.lain-svg {
-    width: clamp(180px, 22vw, 300px);
-    height: auto;
-    display: block;
-    overflow: visible;
-    /* PSX glow: layered cyan drop-shadows */
-    filter:
-        drop-shadow(0 0 6px  rgba(0,212,170,0.5))
-        drop-shadow(0 0 20px rgba(0,212,170,0.22))
-        drop-shadow(0 0 50px rgba(0,212,170,0.08));
-}
-
-/* Nameplate below character */
-.lain-nameplate {
-    text-align: center;
-    margin-top: 10px;
-}
-
-/* ── Animation keyframes ───────────────────────────────────── */
-
-/* Whole character floats gently up/down */
 @keyframes lain-float {
     0%, 100% { transform: translateY(0); }
-    50%       { transform: translateY(-10px); }
-}
-.lain-float {
-    animation: lain-float 5.5s ease-in-out infinite;
-    transform-origin: 50px 175px;
-}
-
-/* Body breathing: subtle scale + rise */
-@keyframes lain-breathe {
-    0%, 100% { transform: translateY(0)   scaleX(1); }
-    45%       { transform: translateY(-2px) scaleX(1.013); }
-}
-.lain-breathe {
-    animation: lain-breathe 4s ease-in-out infinite;
-    transform-origin: 50px 130px;
-    transform-box: fill-box;
-}
-
-/* Idle sway: translate(-50%,-54%) must be in keyframes to avoid conflict */
-@keyframes lain-idle-sway {
-    0%, 100% { transform: translate(-50%, -54%) rotate(-0.7deg); }
-    50%       { transform: translate(-50%, -54%) rotate(0.7deg); }
-}
-.hub-center-label {
-    animation: lain-idle-sway 8s ease-in-out infinite;
-}
-
-/* Aura glow pulse */
-@keyframes lc-aura-pulse {
-    0%, 100% { opacity: 0.7; }
-    50%       { opacity: 1; }
-}
-.lc-aura { animation: lc-aura-pulse 3.5s ease-in-out infinite; }
-
-/* ── Eyelid blink ─────────────────────────────────────────── */
-/* Lids start invisible (scaleY 0 = flat = eye open) */
-.lc-lid-l, .lc-lid-r,
-.lc-lidline-l, .lc-lidline-r {
-    transform-box: fill-box;
-    transform-origin: 50% 0%;
-    transform: scaleY(0);
-    pointer-events: none;
-}
-
-@keyframes lain-blink-close {
-    0%   { transform: scaleY(0); }
-    40%  { transform: scaleY(1); }
-    65%  { transform: scaleY(1); }
-    100% { transform: scaleY(0); }
-}
-
-/* JS adds/removes .blinking on the container (which has .lain-char-inner class) */
-.lain-char-inner .lc-lid-l,
-.lain-char-inner .lc-lid-r,
-.lain-char-inner .lc-lidline-l,
-.lain-char-inner .lc-lidline-r {
-    transform: scaleY(0);
-}
-.lain-char-inner.blinking .lc-lid-l,
-.lain-char-inner.blinking .lc-lid-r {
-    animation: lain-blink-close 0.22s ease forwards;
-}
-.lain-char-inner.blinking .lc-lidline-l,
-.lain-char-inner.blinking .lc-lidline-r {
-    animation: lain-blink-close 0.22s ease forwards;
-}
-
-/* ── State: idle (default) ─────────────────────────────────── */
-/* Show only idle mouth and normal brows */
-.lain-char-inner .lc-mouth-happy,
-.lain-char-inner .lc-mouth-surprised,
-.lain-char-inner .lc-mouth-thinking,
-.lain-char-inner .lc-mouth-talking-open,
-.lain-char-inner .lc-mouth-talking-closed  { display: none; }
-
-.lain-char-inner .lc-brow-raised,
-.lain-char-inner .lc-brow-furrowed         { display: none; }
-
-/* ── State: happy ──────────────────────────────────────────── */
-.lain-char-inner[data-state="happy"] .lc-mouth-idle    { display: none; }
-.lain-char-inner[data-state="happy"] .lc-mouth-happy   { display: block; }
-.lain-char-inner[data-state="happy"] .lc-blush-l,
-.lain-char-inner[data-state="happy"] .lc-blush-r       { opacity: 0.52 !important; }
-
-/* ── State: surprised ──────────────────────────────────────── */
-.lain-char-inner[data-state="surprised"] .lc-mouth-idle       { display: none; }
-.lain-char-inner[data-state="surprised"] .lc-mouth-surprised  { display: block; }
-.lain-char-inner[data-state="surprised"] .lc-brow-normal      { display: none; }
-.lain-char-inner[data-state="surprised"] .lc-brow-raised      { display: block; }
-/* Eyes wider: scale iris up slightly */
-.lain-char-inner[data-state="surprised"] .lain-eye-l ellipse:nth-child(2),
-.lain-char-inner[data-state="surprised"] .lain-eye-r ellipse:nth-child(2) {
-    transform-box: fill-box;
-    transform-origin: center;
-    transform: scale(1.18);
-}
-
-/* ── State: thinking ──────────────────────────────────────── */
-.lain-char-inner[data-state="thinking"] .lc-mouth-idle     { display: none; }
-.lain-char-inner[data-state="thinking"] .lc-mouth-thinking { display: block; }
-.lain-char-inner[data-state="thinking"] .lc-brow-normal    { display: none; }
-.lain-char-inner[data-state="thinking"] .lc-brow-furrowed  { display: block; }
-/* Head tilts slightly */
-@keyframes lain-think-tilt {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(-9deg); }
-}
-.lain-char-inner[data-state="thinking"] .lain-head {
-    animation: lain-think-tilt 0.5s ease forwards;
-    transform-origin: 50% 97%;
-    transform-box: fill-box;
-}
-
-/* ── State: curious (nav hover) ──────────────────────────── */
-@keyframes lain-curious-tilt {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(-6deg); }
-}
-.lain-char-inner[data-state="curious"] .lain-head {
-    animation: lain-curious-tilt 0.3s ease forwards;
-    transform-origin: 50% 97%;
-    transform-box: fill-box;
-}
-.lain-char-inner[data-state="curious"] .lc-brow-normal { display: none; }
-.lain-char-inner[data-state="curious"] .lc-brow-raised { display: block; }
-
-/* ── State: talking ──────────────────────────────────────── */
-.lain-char-inner[data-state="talking"] .lc-mouth-idle { display: none; }
-/* Mouth open/closed toggled by data-mouth attribute (via JS) */
-.lain-char-inner[data-state="talking"]:not([data-mouth="open"]) .lc-mouth-talking-open   { display: none; }
-.lain-char-inner[data-state="talking"]:not([data-mouth="open"]) .lc-mouth-talking-closed { display: block; }
-.lain-char-inner[data-state="talking"][data-mouth="open"]       .lc-mouth-talking-closed { display: none; }
-.lain-char-inner[data-state="talking"][data-mouth="open"]       .lc-mouth-talking-open   { display: block; }
-
-/* ── Reduced motion overrides ────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-    .lain-float    { animation: none; }
-    .lain-breathe  { animation: none; }
-    .hub-center-label { animation: none; }
-    .lc-aura       { animation: none; }
-    .lain-char-inner.blinking .lc-lid-l,
-    .lain-char-inner.blinking .lc-lid-r,
-    .lain-char-inner.blinking .lc-lidline-l,
-    .lain-char-inner.blinking .lc-lidline-r { animation: none; }
+    50%      { transform: translateY(-6px); }
 }
 
 /* ── Hub Visual Enhancements ───────────────────────────────── */
