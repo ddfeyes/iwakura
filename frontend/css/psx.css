@@ -281,3 +281,55 @@
     outline: none;
     letter-spacing: 0.12em;
 }
+
+/* ── Mood Indicator ──────────────────────────────────────────────────────── */
+.mood-indicator {
+    border: 1px solid var(--mood-color, #ff8c00);
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    background: rgba(0,0,0,0.4);
+}
+.mood-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.4rem;
+}
+.mood-label {
+    font-family: 'VT323', monospace;
+    font-size: 1.4rem;
+    letter-spacing: 2px;
+}
+.mood-intensity {
+    color: #888;
+    font-size: 0.75rem;
+}
+.mood-bar {
+    font-family: monospace;
+    color: var(--mood-color, #ff8c00);
+    letter-spacing: 2px;
+    margin-bottom: 0.4rem;
+}
+.mood-signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.mood-signals span {
+    font-size: 0.7rem;
+    color: #8b7cc8;
+    background: rgba(139,124,200,0.1);
+    padding: 0.1rem 0.4rem;
+}
+.mood-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--mood-color, #ff8c00);
+    animation: mood-pulse 1.5s ease-in-out infinite;
+    flex-shrink: 0;
+}
+@keyframes mood-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(0.6); }
+}
