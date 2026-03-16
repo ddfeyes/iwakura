@@ -133,23 +133,55 @@ class StatusDashboard {
 
         // ── AO Sessions ──────────────────────────────────────────
         const aoList = Array.isArray(ao_sessions) ? ao_sessions : [];
-        const aoRows = aoList.slice(0, 10).map(s => {
-            const dot   = s.status === 'active' ? 'sdot-g' : 'sdot-d';
-            const age   = this._fmtAge(s.age_seconds);
-            const last  = (s.last_line || '').slice(0, 60);
+        const isActive = s => {
+            const lastLine = (s.last_line || '').toLowerCase();
+            const bypass = lastLine.includes('bypass permissions');
+            return !bypass && (s.age_seconds !== null && s.age_seconds !== undefined && s.age_seconds < 1800);
+        };
+        const activeSessions = aoList.filter(isActive);
+        const idleSessions   = aoList.filter(s => !isActive(s));
+
+        const activeRows = activeSessions.map(s => {
+            const age  = this._fmtAge(s.age_seconds);
+            const last = (s.last_line || '').slice(0, 60);
             return `
                 <div class="srow">
-                    <div class="sdot ${dot}"></div>
+                    <div class="sdot sdot-g"></div>
                     <span class="srow-label orange">${esc(s.name)}</span>
                     <span class="srow-val">${esc(age)}&nbsp;&nbsp;${esc(last)}</span>
                 </div>
             `;
         }).join('');
 
+        let idleSection = '';
+        if (idleSessions.length > 0) {
+            const idleId = 'ao-idle-' + Date.now();
+            const idleDetailRows = idleSessions.map(s => {
+                const age  = this._fmtAge(s.age_seconds);
+                const last = (s.last_line || '').slice(0, 60);
+                return `
+                    <div class="srow dim">
+                        <div class="sdot sdot-d"></div>
+                        <span class="srow-label">${esc(s.name)}</span>
+                        <span class="srow-val">${esc(age)}&nbsp;&nbsp;${esc(last)}</span>
+                    </div>
+                `;
+            }).join('');
+            idleSection = `
+                <div class="srow ao-idle-toggle" style="cursor:pointer;color:var(--orange);user-select:none" onclick="var d=document.getElementById('${idleId}');d.style.display=d.style.display==='none'?'block':'none'">
+                    <div class="sdot sdot-d"></div>
+                    <span class="srow-label">${idleSessions.length} IDLE SESSION${idleSessions.length > 1 ? 'S' : ''} (click to expand)</span>
+                </div>
+                <div id="${idleId}" style="display:none">${idleDetailRows}</div>
+            `;
+        }
+
         html += `
             <div class="status-card">
                 <div class="status-card-title">AO SESSIONS (${aoList.length})</div>
-                ${aoRows || '<div class="srow"><span class="srow-label dim">● NO ACTIVE SESSIONS</span></div>'}
+                ${activeRows}
+                ${idleSection}
+                ${!activeRows && !idleSection ? '<div class="srow"><span class="srow-label dim">● NO ACTIVE SESSIONS</span></div>' : ''}
             </div>
         `;
 
