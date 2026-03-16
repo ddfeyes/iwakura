@@ -13,6 +13,7 @@ class IwakuraChat {
         this._reconnTimer  = null;
         this._pingInterval = null;
         this._thinkEl      = null;
+        this._typingEl     = null;
         this.container     = null;
 
         // Streaming state — active Lain bubble being built
@@ -20,6 +21,13 @@ class IwakuraChat {
         this._streamBuf    = '';    // accumulated text so far
         this._streamCode   = null;  // fileCode for current stream
         this._streamTime   = null;  // timestamp for current stream
+
+        // Auto-scroll state
+        this._userScrolledUp = false;
+
+        // Unread badge state
+        this._unreadCount    = 0;
+        this._isDiaryActive  = false;
 
         // Callbacks
         this.onStatusChange  = null;  // fn(bool connected)
@@ -32,6 +40,14 @@ class IwakuraChat {
         this.container = container;
         this._restoreHistory();
         this._connect();
+
+        // Auto-scroll: track when user scrolls up
+        if (container) {
+            container.addEventListener('scroll', () => {
+                const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+                this._userScrolledUp = !atBottom;
+            });
+        }
     }
 
     clearDiary() {
@@ -41,9 +57,23 @@ class IwakuraChat {
     sendMessage(text) {
         text = (text || '').trim();
         if (!text || !this.connected) return false;
+        this._userScrolledUp = false;  // user wants to see response
         this._addUserMsg(text);
         this._send({ type: 'message', text });
+        this._showTyping();
         return true;
+    }
+
+    // ── Unread badge API (called by app.js) ───────────────────
+
+    setActive(isActive) {
+        this._isDiaryActive = isActive;
+        if (isActive) this.clearUnread();
+    }
+
+    clearUnread() {
+        this._unreadCount = 0;
+        this._updateBadge();
     }
 
     resetSession() {
@@ -126,11 +156,14 @@ class IwakuraChat {
 
             case 'token':
                 this._hideThinking();
+                this._hideTyping();
                 this._appendToken(msg);
                 break;
 
             case 'done':
+                this._hideTyping();
                 this._finalizeStream(msg);
+                this._incrementUnread();
                 if (this.onSessionChange) this.onSessionChange(msg.sessionId);
                 if (window.audio) window.audio.playBeep();
                 break;
@@ -138,13 +171,16 @@ class IwakuraChat {
             case 'response':
                 // Legacy fallback — backend may still send this
                 this._hideThinking();
+                this._hideTyping();
                 this._addLainMsg(msg);
+                this._incrementUnread();
                 if (this.onSessionChange) this.onSessionChange(msg.sessionId);
                 if (window.audio) window.audio.playBeep();
                 break;
 
             case 'error':
                 this._hideThinking();
+                this._hideTyping();
                 this._finalizeStream(null);
                 this._addErrorMsg(msg.text || 'UNKNOWN ERROR');
                 break;
@@ -321,6 +357,31 @@ class IwakuraChat {
         if (this._thinkEl) { this._thinkEl.remove(); this._thinkEl = null; }
     }
 
+    _showTyping() {
+        if (this._typingEl) return;
+        this._typingEl = document.createElement('div');
+        this._typingEl.className = 'message lain-message typing-indicator';
+        this._typingEl.innerHTML = '<span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+        this._append(this._typingEl);
+    }
+
+    _hideTyping() {
+        if (this._typingEl) { this._typingEl.remove(); this._typingEl = null; }
+    }
+
+    _incrementUnread() {
+        if (this._isDiaryActive) return;
+        this._unreadCount++;
+        this._updateBadge();
+    }
+
+    _updateBadge() {
+        const badge = document.getElementById('diary-unread-badge');
+        if (!badge) return;
+        badge.textContent = this._unreadCount > 0 ? String(this._unreadCount) : '';
+        badge.style.display = this._unreadCount > 0 ? 'flex' : 'none';
+    }
+
     _append(el) {
         if (this.container) {
             this.container.appendChild(el);
@@ -329,7 +390,10 @@ class IwakuraChat {
     }
 
     _scrollBottom() {
-        if (this.container) this.container.scrollTop = this.container.scrollHeight;
+        if (!this.container) return;
+        if (!this._userScrolledUp) {
+            this.container.scrollTop = this.container.scrollHeight;
+        }
     }
 
     // ── History persistence ───────────────────────────────────

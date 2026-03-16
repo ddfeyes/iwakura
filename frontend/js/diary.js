@@ -24,6 +24,10 @@
     let reconnTimer   = null;
     let pingInterval  = null;
     let thinkEl       = null;
+    let typingEl      = null;
+
+    // ── Auto-scroll state ─────────────────────────────────────
+    let userScrolledUp = false;
 
     // ── Connect ───────────────────────────────────────────────
     function connect() {
@@ -97,6 +101,27 @@
         if (sendBtn)   sendBtn.disabled    = !isConnected;
     }
 
+    // ── Scroll listener for auto-scroll ───────────────────────
+    if (messagesEl) {
+        messagesEl.addEventListener('scroll', () => {
+            const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+            userScrolledUp = !atBottom;
+        });
+    }
+
+    // ── Typing indicator ──────────────────────────────────────
+    function showTyping() {
+        if (typingEl) return;
+        typingEl = document.createElement('div');
+        typingEl.className = 'message lain-message typing-indicator';
+        typingEl.innerHTML = '<span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+        append(typingEl);
+    }
+
+    function hideTyping() {
+        if (typingEl) { typingEl.remove(); typingEl = null; }
+    }
+
     // ── Message handling ──────────────────────────────────────
     function handleMsg(msg) {
         switch (msg.type) {
@@ -106,6 +131,7 @@
 
             case 'response':
                 hideThinking();
+                hideTyping();
                 addLainMsg(msg);
                 if (msg.sessionId) {
                     const short = msg.sessionId.slice(0, 16) + '...';
@@ -115,6 +141,7 @@
 
             case 'error':
                 hideThinking();
+                hideTyping();
                 addMsg('error', msg.text || 'SIGNAL LOST');
                 break;
 
@@ -213,7 +240,9 @@
     }
 
     function scrollBottom() {
-        if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (messagesEl && !userScrolledUp) {
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
     }
 
     // ── Typewriter ────────────────────────────────────────────
@@ -247,10 +276,12 @@
     function doSend() {
         const text = (inputEl.value || '').trim();
         if (!text || !connected) return;
+        userScrolledUp = false;  // user wants to see response
         addUserMsg(text);
         send({ type: 'message', text });
         inputEl.value = '';
         if (tagsEl) tagsEl.innerHTML = '';
+        showTyping();
     }
 
     // ── Tag preview ───────────────────────────────────────────
