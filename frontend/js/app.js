@@ -15,6 +15,7 @@
     let statusDash    = null;
     let tasksDash     = null;
     let searchScreen  = null;
+    let wiredScreen   = null;
 
     // ── DOM refs ──────────────────────────────────────────────
     const screens = {
@@ -26,6 +27,7 @@
         psyche: document.getElementById('screen-psyche'),
         tasks:  document.getElementById('screen-tasks'),
         search: document.getElementById('screen-search'),
+        wired:  document.getElementById('screen-wired'),
     };
 
     // ── Screen management ─────────────────────────────────────
@@ -55,6 +57,7 @@
             if (name === 'psyche') loadPsyche();
             if (name === 'tasks')  loadTasks();
             if (name === 'search') initSearch();
+            if (name === 'wired')  initWired();
 
             // Stop hub Three.js when leaving
             if (name !== 'hub' && orbNav) orbNav.stop();
@@ -73,6 +76,9 @@
 
             // Stop search debounce when leaving search
             if (name !== 'search' && searchScreen) searchScreen.stop();
+
+            // Stop wired SSE when leaving wired
+            if (name !== 'wired' && wiredScreen) wiredScreen.stop();
 
             // Unread badge: mark diary active/inactive
             if (chat) {
@@ -313,6 +319,17 @@
         searchScreen.focus();
     }
 
+    // ── WIRED Screen ──────────────────────────────────────────
+
+    function initWired() {
+        if (!wiredScreen) {
+            wiredScreen = new WiredScreen();
+        } else {
+            wiredScreen.stop();
+        }
+        wiredScreen.init();
+    }
+
     // ── Back buttons ──────────────────────────────────────────
 
     document.querySelectorAll('.back-btn').forEach(btn => {
@@ -419,7 +436,7 @@
     // Expose for debugging and hotkeys
     window.iwakura = {
         showScreen,
-        loadStatus, initMemory, loadPsyche, loadTasks, initSearch,
+        loadStatus, initMemory, loadPsyche, loadTasks, initSearch, initWired,
         getPsyche: () => psyche,
         currentScreen: () => currentScreen,
         clearDiaryUnread: () => { if (chat) chat.clearUnread(); },

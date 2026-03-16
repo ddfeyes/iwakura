@@ -1,14 +1,16 @@
 """Iwakura Platform Backend — FastAPI + WebSocket + OpenClaw proxy."""
+import asyncio
 import json
 import logging
 import pathlib
 import random
 import time
+import uuid
 from datetime import datetime, timedelta
 import yaml
 import markdown as md_lib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.websockets import WebSocketState
 
 import gateway
@@ -553,6 +555,164 @@ async def api_search(q: str = ""):
 @app.get("/api/session")
 async def api_session():
     return JSONResponse({"sessionId": gateway.get_current_session_id()})
+
+
+# ── WIRED — live activity stream ──────────────────────────────────────────────
+
+async def _build_wired_events() -> list[dict]:
+    """Aggregate last 50 events from DIARY, AO sessions, MEMORY, CRON, SYSTEM."""
+    events: list[dict] = []
+    now = datetime.utcnow()
+
+    # DIARY: last 10 messages
+    try:
+        diary = load_diary_history()
+        for entry in diary[-10:]:
+            role = entry.get("role", "user")
+            text = entry.get("text", "")
+            snippet = text[:70] + ("..." if len(text) > 70 else "")
+            arrow = "→" if role == "user" else "←"
+            label = "Human" if role == "user" else "Lain"
+            events.append({
+                "id": entry.get("code") or str(uuid.uuid4()),
+                "ts": entry.get("timestamp", now.isoformat() + "Z"),
+                "source": "DIARY",
+                "level": "info",
+                "text": f"{label} {arrow} {snippet}",
+                "detail": entry.get("code", ""),
+            })
+    except Exception:
+        pass
+
+    # AO SESSIONS: recent iw- tmux sessions
+    try:
+        ao_result = await sys_status.get_ao_sessions()
+        for s in ao_result.get("sessions", [])[:10]:
+            name = str(s.get("name", ""))
+            status = str(s.get("status", "unknown"))
+            last = str(s.get("last_line", ""))[:60]
+            age_h = s.get("age_hours")
+            age_str = f"{age_h:.1f}h ago" if age_h is not None else ""
+            events.append({
+                "id": "ao-" + name,
+                "ts": now.isoformat() + "Z",
+                "source": "AO",
+                "level": "info",
+                "text": f"{name} [{status}] {last}".strip(),
+                "detail": age_str,
+            })
+    except Exception:
+        pass
+
+    # MEMORY: files modified in last 24h
+    try:
+        cutoff = now.timestamp() - 86400
+        if LAIN_MEMORY.exists():
+            for f in sorted(LAIN_MEMORY.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)[:15]:
+                if not f.is_file():
+                    continue
+                stat = f.stat()
+                if stat.st_mtime < cutoff:
+                    continue
+                mtime = datetime.utcfromtimestamp(stat.st_mtime)
+                size_str = f"{stat.st_size // 1024}KB" if stat.st_size > 1024 else f"{stat.st_size}B"
+                events.append({
+                    "id": "mem-" + f.name,
+                    "ts": mtime.isoformat() + "Z",
+                    "source": "MEMORY",
+                    "level": "info",
+                    "text": f"write: {f.name} ({size_str})",
+                    "detail": f.name,
+                })
+    except Exception:
+        pass
+
+    # CRON: openclaw cron jobs with last_run
+    try:
+        crons = await sys_status.get_openclaw_crons()
+        for c in crons[:10]:
+            name = str(c.get("name", ""))[:40]
+            last_run = str(c.get("last_run", ""))
+            enabled = c.get("enabled", True)
+            level = "info" if enabled else "warn"
+            if name:
+                events.append({
+                    "id": "cron-" + name,
+                    "ts": last_run if last_run else now.isoformat() + "Z",
+                    "source": "CRON",
+                    "level": level,
+                    "text": f"{name} [{'enabled' if enabled else 'disabled'}] {c.get('schedule', '')}".strip(),
+                    "detail": last_run,
+                })
+    except Exception:
+        pass
+
+    # SYSTEM: memory health snapshot
+    try:
+        mem_info = await sys_status.get_memory_usage()
+        pct = mem_info.get("percent", 0)
+        level = "alert" if pct > 95 else ("warn" if pct > 85 else "info")
+        events.append({
+            "id": "sys-mem",
+            "ts": now.isoformat() + "Z",
+            "source": "SYSTEM",
+            "level": level,
+            "text": f"memory {pct:.1f}% used — {mem_info.get('used', '?')} / {mem_info.get('total', '?')}",
+            "detail": str(pct),
+        })
+    except Exception:
+        pass
+
+    # Sort descending by ts, cap at 50
+    try:
+        events.sort(key=lambda e: e.get("ts", ""), reverse=True)
+    except Exception:
+        pass
+    return events[:50]
+
+
+@app.get("/api/wired")
+async def api_wired():
+    events = await _build_wired_events()
+    return JSONResponse({"events": events, "total": len(events)})
+
+
+@app.get("/api/wired/stream")
+async def api_wired_stream():
+    """SSE stream: emits a 'wired' event every 5 seconds with latest events."""
+
+    async def event_generator():
+        last_ids: set[str] = set()
+        # Send initial full snapshot
+        events = await _build_wired_events()
+        last_ids = {e["id"] for e in events}
+        payload = json.dumps({"events": events, "total": len(events)})
+        yield f"data: {payload}\n\n"
+
+        while True:
+            await asyncio.sleep(5)
+            try:
+                events = await _build_wired_events()
+                new_ids = {e["id"] for e in events}
+                new_events = [e for e in events if e["id"] not in last_ids]
+                last_ids = new_ids
+                if new_events:
+                    payload = json.dumps({"events": events, "new": new_events, "total": len(events)})
+                    yield f"data: {payload}\n\n"
+                else:
+                    # Heartbeat to keep connection alive
+                    yield ": heartbeat\n\n"
+            except Exception:
+                yield ": error\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Static files + SPA fallback ───────────────────────────────────────────────
