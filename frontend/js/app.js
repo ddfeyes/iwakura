@@ -61,6 +61,11 @@
 
             // Stop status auto-refresh when leaving status
             if (name !== 'status' && statusDash) statusDash.stop();
+
+            // Unread badge: mark diary active/inactive
+            if (chat) {
+                chat.setActive(name === 'diary');
+            }
         };
 
         if (skipGlitch) {
@@ -372,5 +377,7 @@
         loadStatus, initMemory, loadPsyche,
         getPsyche: () => psyche,
         currentScreen: () => currentScreen,
+        clearDiaryUnread: () => { if (chat) chat.clearUnread(); },
+        setDiaryActive: (v) => { if (chat) chat.setActive(v); },
     };
 })();
