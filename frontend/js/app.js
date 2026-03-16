@@ -224,6 +224,9 @@
         });
 
         resetBtn.addEventListener('click', () => { chat.resetSession(); });
+
+        const clearBtn = document.getElementById('clear-diary-btn');
+        if (clearBtn) clearBtn.addEventListener('click', () => { chat.clearDiary(); });
     }
 
     function extractTagsPreview(text) {

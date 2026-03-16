@@ -2,6 +2,9 @@
    Manages the WebSocket connection to /ws/chat and all message rendering
    ─────────────────────────────────────────────────────────────────────────── */
 
+const _HISTORY_KEY = 'iwakura-diary-history';
+const _HISTORY_MAX = 100;
+
 class IwakuraChat {
     constructor() {
         this.ws            = null;
@@ -15,6 +18,8 @@ class IwakuraChat {
         // Streaming state — active Lain bubble being built
         this._streamEl     = null;  // current .msg-body.lain element
         this._streamBuf    = '';    // accumulated text so far
+        this._streamCode   = null;  // fileCode for current stream
+        this._streamTime   = null;  // timestamp for current stream
 
         // Callbacks
         this.onStatusChange  = null;  // fn(bool connected)
@@ -25,7 +30,12 @@ class IwakuraChat {
 
     init(container) {
         this.container = container;
+        this._restoreHistory();
         this._connect();
+    }
+
+    clearDiary() {
+        this._showPurgePrompt();
     }
 
     sendMessage(text) {
@@ -53,6 +63,7 @@ class IwakuraChat {
             this.ws.onopen = () => {
                 this.connected  = true;
                 this.reconnectMs = 2000;
+                this._addSepMsg('CURRENT SESSION');
                 if (this.onStatusChange) this.onStatusChange(true);
                 this._startPing();
             };
@@ -140,6 +151,7 @@ class IwakuraChat {
 
             case 'session_reset':
                 this._addSysMsg('SESSION RESET — NEW CONNECTION ESTABLISHED');
+                this._addSepMsg('NEW SESSION');
                 if (this.onSessionChange) this.onSessionChange(null);
                 break;
 
@@ -155,6 +167,9 @@ class IwakuraChat {
             // First token — create the bubble
             const code = msg.fileCode || this._code();
             const time = msg.timestamp || this._now();
+
+            this._streamCode = code;
+            this._streamTime = time;
 
             const el = document.createElement('div');
             el.className = 'chat-msg';
@@ -201,8 +216,19 @@ class IwakuraChat {
                 this._streamEl.parentElement.appendChild(tEl);
             }
 
-            this._streamEl  = null;
-            this._streamBuf = '';
+            if (this._streamBuf) {
+                this._saveMessage({
+                    role: 'lain',
+                    text: this._streamBuf,
+                    timestamp: this._streamTime || this._now(),
+                    fileCode:  this._streamCode || this._code(),
+                });
+            }
+
+            this._streamEl   = null;
+            this._streamBuf  = '';
+            this._streamCode = null;
+            this._streamTime = null;
         }
     }
 
@@ -225,6 +251,7 @@ class IwakuraChat {
             ${tags.length ? '<div class="msg-tags">' + tags.map(t => `<span class="tag">${t}</span>`).join('') + '</div>' : ''}
         `;
         this._append(el);
+        this._saveMessage({ role: 'user', text, timestamp: time, fileCode: code });
     }
 
     _addLainMsg(msg) {
@@ -258,6 +285,7 @@ class IwakuraChat {
 
         this._append(el);
         typewriter(body, msg.text || '', 16, () => this._scrollBottom());
+        this._saveMessage({ role: 'lain', text: msg.text || '', timestamp: time, fileCode: code });
     }
 
     _addErrorMsg(text) {
@@ -302,6 +330,126 @@ class IwakuraChat {
 
     _scrollBottom() {
         if (this.container) this.container.scrollTop = this.container.scrollHeight;
+    }
+
+    // ── History persistence ───────────────────────────────────
+
+    _restoreHistory() {
+        try {
+            const raw = localStorage.getItem(_HISTORY_KEY);
+            if (!raw) return;
+            const msgs = JSON.parse(raw);
+            if (!Array.isArray(msgs) || msgs.length === 0) return;
+            msgs.forEach(m => this._renderHistoryMsg(m));
+            this._addSepMsg('PREVIOUS SESSION');
+        } catch (e) {
+            try { localStorage.removeItem(_HISTORY_KEY); } catch (_) {}
+        }
+    }
+
+    _renderHistoryMsg(m) {
+        if (!m || !m.role || !m.text) return;
+        if (m.role === 'user') {
+            const tags = this._extractTags(m.text);
+            const el = document.createElement('div');
+            el.className = 'chat-msg';
+            el.innerHTML = `
+                <div class="msg-header">
+                    <span class="msg-code orange">${this._esc(m.fileCode || '')}</span>
+                    <span class="msg-from orange">IVAN</span>
+                    <span class="msg-time">${this._esc(m.timestamp || '')}</span>
+                </div>
+                <div class="msg-body">${this._esc(m.text)}</div>
+                ${tags.length ? '<div class="msg-tags">' + tags.map(t => `<span class="tag">${this._esc(t)}</span>`).join('') + '</div>' : ''}
+            `;
+            this._append(el);
+        } else if (m.role === 'lain') {
+            const tags = this._extractTags(m.text);
+            const el   = document.createElement('div');
+            el.className = 'chat-msg';
+
+            const hdr = document.createElement('div');
+            hdr.className = 'msg-header';
+            hdr.innerHTML = `
+                <span class="msg-code cyan">${this._esc(m.fileCode || '')}</span>
+                <span class="msg-from purple">LAIN</span>
+                <span class="msg-time">${this._esc(m.timestamp || '')}</span>
+            `;
+
+            const body = document.createElement('div');
+            body.className = 'msg-body lain';
+            body.textContent = m.text;
+
+            el.appendChild(hdr);
+            el.appendChild(body);
+
+            if (tags.length) {
+                const tEl = document.createElement('div');
+                tEl.className = 'msg-tags';
+                tEl.innerHTML = tags.map(t => `<span class="tag">${this._esc(t)}</span>`).join('');
+                el.appendChild(tEl);
+            }
+            this._append(el);
+        }
+    }
+
+    _addSepMsg(label) {
+        const el = document.createElement('div');
+        el.className = 'session-sep';
+        el.textContent = `── ${label} ──`;
+        this._append(el);
+    }
+
+    _saveMessage(msg) {
+        try {
+            const raw = localStorage.getItem(_HISTORY_KEY);
+            let arr = [];
+            try { arr = JSON.parse(raw) || []; } catch (_) { arr = []; }
+            if (!Array.isArray(arr)) arr = [];
+            arr.push(msg);
+            if (arr.length > _HISTORY_MAX) arr = arr.slice(arr.length - _HISTORY_MAX);
+            localStorage.setItem(_HISTORY_KEY, JSON.stringify(arr));
+        } catch (e) {
+            // Quota exceeded or other storage error — silently skip
+        }
+    }
+
+    _showPurgePrompt() {
+        const promptEl = document.createElement('div');
+        promptEl.className = 'purge-prompt';
+
+        const label = document.createElement('div');
+        label.className = 'purge-label';
+        label.textContent = '> CONFIRM PURGE? TYPE Y + ENTER OR ESC TO CANCEL';
+
+        const input = document.createElement('input');
+        input.className = 'purge-input';
+        input.type = 'text';
+        input.placeholder = 'Y / N';
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('spellcheck', 'false');
+
+        promptEl.appendChild(label);
+        promptEl.appendChild(input);
+        this._append(promptEl);
+        input.focus();
+
+        const cancel = () => promptEl.remove();
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                cancel();
+            } else if (e.key === 'Enter') {
+                if (input.value.trim().toUpperCase() === 'Y') {
+                    try { localStorage.removeItem(_HISTORY_KEY); } catch (_) {}
+                    if (this.container) this.container.innerHTML = '';
+                    this._addSysMsg('> DIARY CLEARED');
+                } else {
+                    cancel();
+                }
+            }
+        });
     }
 
     // ── Helpers ───────────────────────────────────────────────
