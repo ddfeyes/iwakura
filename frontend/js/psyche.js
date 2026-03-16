@@ -37,8 +37,12 @@
         }
 
         _glitch() {
-            this._el.classList.add('psyche-glitch');
-            setTimeout(() => this._el.classList.remove('psyche-glitch'), 200);
+            if (window.glitchFX) {
+                window.glitchFX.psycheFlash(this._el);
+            } else {
+                this._el.classList.add('psyche-glitch');
+                setTimeout(() => this._el.classList.remove('psyche-glitch'), 200);
+            }
         }
 
         _render(data) {
