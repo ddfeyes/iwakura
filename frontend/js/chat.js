@@ -12,6 +12,10 @@ class IwakuraChat {
         this._thinkEl      = null;
         this.container     = null;
 
+        // Streaming state — active Lain bubble being built
+        this._streamEl     = null;  // current .msg-body.lain element
+        this._streamBuf    = '';    // accumulated text so far
+
         // Callbacks
         this.onStatusChange  = null;  // fn(bool connected)
         this.onSessionChange = null;  // fn(sessionId string)
@@ -109,7 +113,19 @@ class IwakuraChat {
                 this._showThinking();
                 break;
 
+            case 'token':
+                this._hideThinking();
+                this._appendToken(msg);
+                break;
+
+            case 'done':
+                this._finalizeStream(msg);
+                if (this.onSessionChange) this.onSessionChange(msg.sessionId);
+                if (window.audio) window.audio.playBeep();
+                break;
+
             case 'response':
+                // Legacy fallback — backend may still send this
                 this._hideThinking();
                 this._addLainMsg(msg);
                 if (this.onSessionChange) this.onSessionChange(msg.sessionId);
@@ -118,6 +134,7 @@ class IwakuraChat {
 
             case 'error':
                 this._hideThinking();
+                this._finalizeStream(null);
                 this._addErrorMsg(msg.text || 'UNKNOWN ERROR');
                 break;
 
@@ -128,6 +145,64 @@ class IwakuraChat {
 
             case 'pong':
                 break;
+        }
+    }
+
+    // ── Streaming helpers ─────────────────────────────────────
+
+    _appendToken(msg) {
+        if (!this._streamEl) {
+            // First token — create the bubble
+            const code = msg.fileCode || this._code();
+            const time = msg.timestamp || this._now();
+
+            const el = document.createElement('div');
+            el.className = 'chat-msg';
+
+            const hdr = document.createElement('div');
+            hdr.className = 'msg-header';
+            hdr.innerHTML = `
+                <span class="msg-code cyan">${this._esc(code)}</span>
+                <span class="msg-from purple">LAIN</span>
+                <span class="msg-time">${this._esc(time)}</span>
+            `;
+
+            const body = document.createElement('div');
+            body.className = 'msg-body lain';
+
+            el.appendChild(hdr);
+            el.appendChild(body);
+            this._append(el);
+
+            this._streamEl  = body;
+            this._streamBuf = '';
+        }
+
+        // Append the new line with a cursor
+        const line = msg.text || '';
+        this._streamBuf += (this._streamBuf ? '\n' : '') + line;
+
+        // Render with a blinking cursor at the end
+        this._streamEl.textContent = this._streamBuf + ' ▋';
+        this._scrollBottom();
+    }
+
+    _finalizeStream(msg) {
+        if (this._streamEl) {
+            // Remove cursor, set final text
+            this._streamEl.textContent = this._streamBuf;
+
+            // Add tags
+            const tags = this._extractTags(this._streamBuf);
+            if (tags.length) {
+                const tEl = document.createElement('div');
+                tEl.className = 'msg-tags';
+                tEl.innerHTML = tags.map(t => `<span class="tag">${this._esc(t)}</span>`).join('');
+                this._streamEl.parentElement.appendChild(tEl);
+            }
+
+            this._streamEl  = null;
+            this._streamBuf = '';
         }
     }
 

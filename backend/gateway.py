@@ -1,11 +1,15 @@
-"""OpenClaw gateway client — runs openclaw agent subprocess for synchronous responses.
+"""OpenClaw gateway client — runs openclaw agent subprocess for responses.
 
 We use the `openclaw agent --json` CLI rather than the HTTP hooks endpoint because
 POST /hooks/agent is fire-and-forget (returns {"ok":true,"runId":"..."} immediately
 with no way to retrieve the response text via HTTP).  The CLI is synchronous and
 returns the full response inline, which is what the WebSocket chat flow requires.
+
+stream_message() runs without --json and yields lines as they arrive, enabling
+real-time token streaming to the frontend.
 """
 import asyncio
+from collections.abc import AsyncIterator
 import json
 import os
 import pathlib
@@ -113,6 +117,51 @@ async def send_message(text: str) -> dict | None:
         "sessionId": session_id or "",
         "runId": data.get("runId", ""),
     }
+
+
+async def stream_message(text: str) -> AsyncIterator[str]:
+    """Stream response tokens from openclaw agent CLI line-by-line.
+
+    Runs `openclaw agent` without --json so output appears incrementally.
+    Falls back to a single token if the process exits non-zero.
+    Yields str chunks; updates global _session_id when done if detectable.
+    """
+    global _session_id
+
+    cmd = ["openclaw", "agent", "--agent", LAIN_AGENT_ID, "--message", text]
+    if _session_id:
+        cmd.extend(["--session-id", _session_id])
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except Exception as e:
+        logger.error(f"openclaw agent subprocess error: {e}")
+        return
+
+    try:
+        async for raw_line in proc.stdout:
+            line = raw_line.decode(errors="replace").rstrip("\n")
+            if line:
+                yield line
+    except Exception as e:
+        logger.error(f"stream_message read error: {e}")
+
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=10)
+    except asyncio.TimeoutError:
+        proc.kill()
+
+    if proc.returncode != 0:
+        stderr_data = b""
+        try:
+            stderr_data = await proc.stderr.read()
+        except Exception:
+            pass
+        logger.error(f"openclaw agent stream exited {proc.returncode}: {stderr_data.decode()[:300]}")
 
 
 def get_current_session_id() -> str | None:
