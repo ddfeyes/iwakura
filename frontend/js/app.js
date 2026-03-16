@@ -12,6 +12,7 @@
     let chat          = null;
     let memory        = null;
     let psyche        = null;
+    let statusDash    = null;
 
     // ── DOM refs ──────────────────────────────────────────────
     const screens = {
@@ -57,6 +58,9 @@
 
             // Stop psyche auto-refresh when leaving psyche
             if (name !== 'psyche' && psyche) psyche.stop();
+
+            // Stop status auto-refresh when leaving status
+            if (name !== 'status' && statusDash) statusDash.stop();
         };
 
         if (skipGlitch) {
@@ -222,122 +226,18 @@
 
     // ── Status Screen ─────────────────────────────────────────
 
-    async function loadStatus() {
+    function loadStatus() {
         const el = document.getElementById('status-content');
+        const ts = document.getElementById('status-timestamp');
         if (!el) return;
-        el.innerHTML = '<div class="screen-loading green">SCANNING SYSTEMS<span class="loading-dots"></span></div>';
 
-        try {
-            const res  = await fetch('/api/status');
-            const data = await res.json();
-            renderStatus(el, data);
-
-            const ts = document.getElementById('status-timestamp');
-            if (ts) ts.textContent = data.timestamp || '--';
-        } catch (e) {
-            el.innerHTML = '<div class="screen-loading red">ERROR RETRIEVING STATUS</div>';
+        if (!statusDash) {
+            statusDash = new StatusDashboard();
+        } else {
+            // Re-entering status: stop old interval and restart
+            statusDash.stop();
         }
-    }
-
-    function renderStatus(el, data) {
-        const { crons = [], docker = [], memory = {}, lain = {} } = data;
-        let html = '';
-
-        // ── Memory Usage ──
-        const pct  = memory.percent || 0;
-        const used = memory.used || '?';
-        const free = memory.free || '?';
-        html += `
-            <div class="status-card">
-                <div class="status-card-title">MEMORY USAGE</div>
-                <div class="mem-bar-wrap">
-                    <div class="mem-bar-fill" style="width:${pct}%"></div>
-                </div>
-                <div class="mem-stats">
-                    <span class="cyan">${pct}% USED</span>
-                    <span>${used} / ${free} free</span>
-                </div>
-            </div>
-        `;
-
-        // ── Lain State ──
-        const state      = lain.state || {};
-        const initiative = lain.initiative || {};
-        const stateRows  = Object.entries(state).slice(0, 8).map(([k, v]) => `
-            <div class="srow">
-                <div class="sdot sdot-b"></div>
-                <span class="srow-label">${esc(k)}</span>
-                <span class="srow-val">${esc(String(v))}</span>
-            </div>
-        `).join('');
-
-        html += `
-            <div class="status-card">
-                <div class="status-card-title">LAIN STATE</div>
-                ${stateRows || '<div class="srow"><span class="srow-label dim">NO STATE FILE</span></div>'}
-                ${initiative.counter !== undefined ? `
-                    <div class="srow" style="margin-top:6px">
-                        <div class="sdot sdot-o"></div>
-                        <span class="srow-label">INITIATIVE</span>
-                        <span class="srow-val orange">${initiative.counter} / ${initiative.max || '?'}</span>
-                    </div>
-                ` : ''}
-            </div>
-        `;
-
-        // ── Cron Jobs ──
-        const cronRows = crons.slice(0, 12).map(c => `
-            <div class="srow">
-                <div class="sdot ${c.active ? 'sdot-g' : 'sdot-d'}"></div>
-                <span class="srow-label">${esc(c.command)}</span>
-                <span class="srow-val">${esc(c.schedule)}</span>
-            </div>
-        `).join('');
-
-        html += `
-            <div class="status-card">
-                <div class="status-card-title">CRON JOBS (${crons.length})</div>
-                ${cronRows || '<div class="srow"><span class="srow-label dim">NO CRONS</span></div>'}
-            </div>
-        `;
-
-        // ── Docker ──
-        const dockerRows = docker.slice(0, 8).map(c => {
-            const up = (c.status || '').toLowerCase().includes('up');
-            return `
-                <div class="srow">
-                    <div class="sdot ${up ? 'sdot-g' : 'sdot-r'}"></div>
-                    <span class="srow-label">${esc(c.name)}</span>
-                    <span class="srow-val">${esc(c.status || '--')}</span>
-                </div>
-            `;
-        }).join('');
-
-        html += `
-            <div class="status-card">
-                <div class="status-card-title">DOCKER (${docker.length})</div>
-                ${dockerRows || '<div class="srow"><span class="srow-label dim">NO CONTAINERS</span></div>'}
-            </div>
-        `;
-
-        // ── Memory Files ──
-        const files = (lain.memory_files || []).slice(0, 10);
-        const fileRows = files.map(f => `
-            <div class="srow">
-                <div class="sdot sdot-b"></div>
-                <span class="srow-label">${esc(f.name)}</span>
-                <span class="srow-val">${esc(f.modified || '')} · ${esc(f.size || '')}</span>
-            </div>
-        `).join('');
-
-        html += `
-            <div class="status-card full">
-                <div class="status-card-title">LAIN MEMORY FILES (${files.length})</div>
-                ${fileRows || '<div class="srow"><span class="srow-label dim">NO FILES</span></div>'}
-            </div>
-        `;
-
-        el.innerHTML = html;
+        statusDash.init(el, ts);
     }
 
     // ── Memory Screen ─────────────────────────────────────────
@@ -370,13 +270,22 @@
         });
     });
 
+    // ── Global ESC → return to hub ────────────────────────────
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && currentScreen !== 'boot' && currentScreen !== 'hub') {
+            if (window.audio) window.audio.playClick();
+            showScreen('hub');
+        }
+    });
+
     // ── Status refresh ────────────────────────────────────────
 
     const statusRefresh = document.getElementById('status-refresh');
     if (statusRefresh) {
         statusRefresh.addEventListener('click', () => {
             if (window.audio) window.audio.playClick();
-            loadStatus();
+            if (statusDash) statusDash.refresh();
         });
     }
 
@@ -415,16 +324,6 @@
     document.addEventListener('click',     startAudio, { once: true });
     document.addEventListener('keydown',   startAudio, { once: true });
     document.addEventListener('touchstart', startAudio, { once: true });
-
-    // ── Utility ───────────────────────────────────────────────
-
-    function esc(s) {
-        return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
 
     // ── Boot ──────────────────────────────────────────────────
 
