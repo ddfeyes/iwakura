@@ -252,7 +252,7 @@ class OrbitalNav {
             if (this.rings[1]) this.rings[1].mesh.rotation.y = t * 0.028;
             if (this.rings[2]) this.rings[2].mesh.rotation.x += 0.0015;
 
-            // Orbit nav meshes
+            // Orbit nav meshes — position + base pulse scale
             this.navMeshes.forEach((mesh, i) => {
                 const base  = this.navDefs[i].baseAngle;
                 const angle = base + t * 0.14;
@@ -263,9 +263,19 @@ class OrbitalNav {
                 );
                 if (mesh.userData.halo) mesh.userData.halo.position.copy(mesh.position);
 
-                // Pulse scale
-                const pulse = 1 + Math.sin(t * 1.8 + i * 1.2) * 0.1;
-                mesh.scale.setScalar(pulse);
+                // Store base pulse scale — hover may multiply it
+                mesh.userData.pulseScale = 1 + Math.sin(t * 1.8 + i * 1.2) * 0.1;
+            });
+
+            // Reset all nodes to default appearance
+            this.navMeshes.forEach(m => {
+                m.material.opacity = m.userData.baseOpacity;
+                m.material.color.setHex(m.userData.color);
+                m.scale.setScalar(m.userData.pulseScale);
+                if (m.userData.halo) {
+                    m.userData.halo.material.opacity = 0.08;
+                    m.userData.halo.material.color.setHex(m.userData.color);
+                }
             });
 
             // Raycaster hover detection
@@ -273,15 +283,15 @@ class OrbitalNav {
             const hits = this.raycaster.intersectObjects(this.navMeshes);
 
             this.hoveredId = null;
-            this.navMeshes.forEach(m => {
-                m.material.opacity = m.userData.baseOpacity;
-                if (m.userData.halo) m.userData.halo.material.opacity = 0.08;
-            });
-
             if (hits.length > 0) {
                 const h = hits[0].object;
                 h.material.opacity = 1.0;
-                if (h.userData.halo) h.userData.halo.material.opacity = 0.3;
+                h.material.color.setHex(0x00d4aa);       // cyan on hover
+                h.scale.setScalar(h.userData.pulseScale * 1.3); // 1.3x scale
+                if (h.userData.halo) {
+                    h.userData.halo.material.opacity = 0.3;
+                    h.userData.halo.material.color.setHex(0x00d4aa);
+                }
                 this.hoveredId = h.userData.navId;
                 this.canvas.style.cursor = 'pointer';
             } else {

@@ -137,10 +137,10 @@
             orbNav = new OrbitalNav(canvas, labelsDiv, (id) => {
                 showScreen(id);
             });
+            orbNav.init();
+        } else {
+            orbNav.resume();
         }
-
-        orbNav.running = false;
-        orbNav.init();
 
         // Load session info for footer
         fetch('/api/session')
