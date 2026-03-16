@@ -460,6 +460,7 @@ body::after {
     color: var(--orange); letter-spacing: 0.3em;
     margin-bottom: 10px; padding-bottom: 6px;
     border-bottom: 1px solid rgba(255,140,0,0.25);
+    display: flex; align-items: center; justify-content: space-between;
 }
 .srow {
     display: flex; align-items: center; gap: 8px;
@@ -510,6 +511,26 @@ body::after {
     padding: 4px 10px; cursor: pointer; transition: all 0.2s;
 }
 .refresh-btn:hover { background: var(--cyan); color: var(--bg-deep); }
+
+.kill-idle-btn {
+    background: transparent; border: 1px solid var(--orange);
+    color: var(--orange); font-family: var(--font-mono); font-size: 7px;
+    padding: 2px 7px; cursor: pointer; transition: all 0.2s;
+    letter-spacing: 0.1em; flex-shrink: 0;
+}
+.kill-idle-btn:hover { border-color: var(--red); color: var(--red); }
+
+.sessions-hidden-badge { color: var(--dim); font-size: 10px; }
+
+.status-toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+    background: rgba(10,10,26,0.95); border: 1px solid var(--green);
+    color: var(--green); font-family: var(--font-mono); font-size: 11px;
+    padding: 8px 16px;
+    animation: toast-in 0.2s ease;
+}
+.status-toast-error { border-color: var(--red); color: var(--red); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ── Memory Screen ─────────────────────────────────────────── */
 .memory-layout {

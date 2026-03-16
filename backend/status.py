@@ -50,30 +50,49 @@ def _read_yaml(path: pathlib.Path) -> dict:
         return {}
 
 
-async def get_ao_sessions() -> list[dict]:
-    """List tmux sessions with iw- prefix and capture their last output."""
+async def get_ao_sessions() -> dict:
+    """List tmux sessions with iw- prefix and capture their last output.
+
+    Returns dict with:
+      - sessions: list of sessions created within last 24h (fully enumerated)
+      - old_count: count of sessions older than 24h (not enumerated)
+    """
     raw = await _run([
         "tmux", "list-sessions",
         "-F", "#{session_name}|#{session_created}|#{session_activity}"
     ])
     if not raw:
-        return []
+        return {"sessions": [], "old_count": 0}
 
     sessions = []
+    old_count = 0
     now = int(time.time())
+    THRESHOLD_24H = 86400
+
     for line in raw.splitlines():
         parts = line.strip().split("|")
         if len(parts) < 3:
             continue
-        name, _, activity_str = parts[0], parts[1], parts[2]
+        name, created_str, activity_str = parts[0], parts[1], parts[2]
         if "iw-" not in name:
             continue
+        try:
+            created_ts = int(created_str)
+        except ValueError:
+            created_ts = 0
         try:
             activity_ts = int(activity_str)
         except ValueError:
             activity_ts = 0
-        age_seconds = now - activity_ts if activity_ts else None
-        status = "active" if (age_seconds is not None and age_seconds < 60) else "idle"
+
+        age_seconds = now - created_ts if created_ts else None
+
+        # Sessions older than 24h: count only, don't enumerate
+        if age_seconds is not None and age_seconds > THRESHOLD_24H:
+            old_count += 1
+            continue
+
+        status = "active" if (activity_ts and now - activity_ts < 60) else "idle"
 
         last_line = await _run(["tmux", "capture-pane", "-t", name, "-p"])
         # get last non-empty line
@@ -83,10 +102,25 @@ async def get_ao_sessions() -> list[dict]:
         sessions.append({
             "name": name,
             "age_seconds": age_seconds,
+            "age_hours": round(age_seconds / 3600, 1) if age_seconds is not None else None,
             "last_line": last,
             "status": status,
         })
-    return sessions
+    return {"sessions": sessions, "old_count": old_count}
+
+
+async def kill_idle_ao_sessions() -> list[str]:
+    """Kill tmux sessions that are idle (bypass permissions) and older than 1 hour."""
+    result = await get_ao_sessions()
+    sessions = result["sessions"]
+    killed = []
+    for s in sessions:
+        is_idle = "bypass permissions" in (s.get("last_line") or "").lower()
+        old_enough = (s.get("age_seconds") or 0) > 3600
+        if is_idle and old_enough:
+            await _run(["tmux", "kill-session", "-t", s["name"]])
+            killed.append(s["name"])
+    return killed
 
 
 async def get_openclaw_crons() -> list[dict]:
@@ -254,7 +288,7 @@ def get_memory_file_stats() -> list[dict]:
 
 
 async def get_full_status() -> dict:
-    crons, docker, memory, ao_sessions, openclaw_crons = await asyncio.gather(
+    crons, docker, memory, ao_result, openclaw_crons = await asyncio.gather(
         get_cron_status(),
         get_docker_status(),
         get_memory_usage(),
@@ -268,7 +302,8 @@ async def get_full_status() -> dict:
     return {
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "crons": crons,
-        "ao_sessions": ao_sessions,
+        "ao_sessions": ao_result["sessions"],
+        "ao_sessions_old_count": ao_result["old_count"],
         "openclaw_crons": openclaw_crons,
         "docker": docker,
         "memory": memory,

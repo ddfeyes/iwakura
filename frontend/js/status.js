@@ -80,8 +80,34 @@ class StatusDashboard {
         return `${m}m`;
     }
 
+    async _killIdleSessions() {
+        try {
+            const res = await fetch('/api/ao-sessions/idle', { method: 'DELETE' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const count = data.count || 0;
+            this._showToast(count > 0
+                ? `✓ ${count} session${count > 1 ? 's' : ''} terminated`
+                : '✓ no idle sessions found');
+            this.refresh();
+        } catch (e) {
+            this._showToast('✗ kill failed: ' + e.message, true);
+        }
+    }
+
+    _showToast(msg, isError = false) {
+        const existing = document.getElementById('status-toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.id = 'status-toast';
+        toast.className = 'status-toast' + (isError ? ' status-toast-error' : '');
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
+
     _render(el, data) {
-        const { crons = [], ao_sessions, openclaw_crons, docker = [], memory = {}, lain = {} } = data;
+        const { crons = [], ao_sessions, ao_sessions_old_count, openclaw_crons, docker = [], memory = {}, lain = {} } = data;
         let html = '';
 
         // ── System / Memory ──────────────────────────────────────
@@ -132,7 +158,8 @@ class StatusDashboard {
         `;
 
         // ── AO Sessions ──────────────────────────────────────────
-        const aoList = Array.isArray(ao_sessions) ? ao_sessions : [];
+        const aoList  = Array.isArray(ao_sessions) ? ao_sessions : [];
+        const oldCount = ao_sessions_old_count || 0;
         const isActive = s => {
             const lastLine = (s.last_line || '').toLowerCase();
             const bypass = lastLine.includes('bypass permissions');
@@ -176,12 +203,20 @@ class StatusDashboard {
             `;
         }
 
+        const oldBadge = oldCount > 0
+            ? `<div class="srow"><span class="srow-label sessions-hidden-badge">● ${oldCount} SESSION${oldCount > 1 ? 'S' : ''} &gt;24h (hidden)</span></div>`
+            : '';
+
+        const totalVisible = aoList.length;
+        const killBtnHtml = `<button class="kill-idle-btn" id="kill-idle-btn">KILL IDLE ✕</button>`;
+
         html += `
             <div class="status-card">
-                <div class="status-card-title">AO SESSIONS (${aoList.length})</div>
+                <div class="status-card-title">AO SESSIONS (${totalVisible})${killBtnHtml}</div>
                 ${activeRows}
                 ${idleSection}
-                ${!activeRows && !idleSection ? '<div class="srow"><span class="srow-label dim">● NO ACTIVE SESSIONS</span></div>' : ''}
+                ${oldBadge}
+                ${!activeRows && !idleSection && !oldBadge ? '<div class="srow"><span class="srow-label dim">● NO ACTIVE SESSIONS</span></div>' : ''}
             </div>
         `;
 
@@ -258,6 +293,11 @@ class StatusDashboard {
         `;
 
         el.innerHTML = html;
+
+        const killBtn = document.getElementById('kill-idle-btn');
+        if (killBtn) {
+            killBtn.addEventListener('click', () => this._killIdleSessions());
+        }
     }
 }
 
