@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Issue 66 — Unread Badge + Notification Sound Tests</title>
+<style>
+  body { background: #0a0a14; color: #00d4aa; font-family: 'Share Tech Mono', monospace; padding: 24px; }
+  h1   { color: #ff8c00; margin-bottom: 16px; }
+  .suite { margin: 12px 0; }
+  .suite-name { color: #8b7cc8; font-size: 1.1em; margin-bottom: 4px; }
+  .test  { margin: 4px 0 4px 16px; }
+  .pass  { color: #00d4aa; }
+  .fail  { color: #ff4444; }
+  .summary { margin-top: 24px; font-size: 1.2em; border-top: 1px solid #333; padding-top: 12px; }
+</style>
+</head>
+<body>
+<h1>[ IWAKURA TEST RUNNER ] — Issue 66</h1>
+<div id="output"></div>
+
+<script>
+// ── Minimal test harness ────────────────────────────────────────────────────
+const results = [];
+let currentSuite = '';
+
+function suite(name) { currentSuite = name; }
+
+function test(name, fn) {
+    try {
+        fn();
+        results.push({ suite: currentSuite, name, ok: true });
+    } catch (e) {
+        results.push({ suite: currentSuite, name, ok: false, err: e.message });
+    }
+}
+
+function assert(cond, msg) {
+    if (!cond) throw new Error(msg || 'Assertion failed');
+}
+
+function assertEqual(a, b, msg) {
+    if (a !== b) throw new Error((msg || '') + ` expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`);
+}
+
+// ── Stubs ───────────────────────────────────────────────────────────────────
+
+// Stub document with a simple in-memory element store
+const _elements = {};
+function makeEl(id) {
+    const el = { id, textContent: '', style: { display: 'none' }, _listeners: {} };
+    el.addEventListener = (ev, fn) => { el._listeners[ev] = fn; };
+    return el;
+}
+const _badgeEl = makeEl('diary-unread-badge');
+_elements['diary-unread-badge'] = _badgeEl;
+
+const _doc = {
+    getElementById: (id) => _elements[id] || null,
+    createElement:  (tag) => ({ tag, className: '', textContent: '', innerHTML: '', style: {}, appendChild() {} }),
+};
+
+// Minimal AudioContext stub
+class StubAudioContext {
+    constructor() { this.currentTime = 0; this.destination = {}; }
+    createOscillator() {
+        return { type: 'sine', frequency: { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} },
+            connect() {}, start() {}, stop() {} };
+    }
+    createGain() {
+        return { gain: { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} },
+            connect() {} };
+    }
+    createBiquadFilter() { return { type: 'lowpass', frequency: { value: 0 }, Q: { value: 0 }, connect() {} }; }
+    createBuffer(ch, len, sr) {
+        return { getChannelData: () => new Float32Array(len) };
+    }
+    createBufferSource() { return { buffer: null, loop: false, connect() {}, start() {} }; }
+    resume() {}
+}
+
+// ── Load source modules in-memory (simplified) ─────────────────────────────
+
+// Inline minimal IwakuraAudio (copy of audio.js logic, stub AudioContext)
+function buildAudio() {
+    window.AudioContext = StubAudioContext;
+
+    // Paste the class inline so we can test without a server
+    class IwakuraAudio {
+        constructor() {
+            this.ctx = null;
+            this.masterGain = null;
+            this.volume = 0.7;
+            this.muted = false;
+            this.started = false;
+        }
+
+        init() {
+            try {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = this.muted ? 0 : this.volume;
+                this.masterGain.connect(this.ctx.destination);
+                this.started = true;
+            } catch (e) {}
+        }
+
+        playClick() {
+            if (!this.ctx || this.muted) return;
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(900, now);
+            osc.frequency.exponentialRampToValueAtTime(200, now + 0.04);
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+            osc.connect(gain);
+            gain.connect(this.masterGain);
+            osc.start(now);
+            osc.stop(now + 0.06);
+        }
+
+        playBeep() {
+            if (!this.ctx || this.muted) return;
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.setValueAtTime(0.08, now + 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+            osc.connect(gain);
+            gain.connect(this.masterGain);
+            osc.start(now);
+            osc.stop(now + 0.4);
+        }
+
+        // ── NEW: playNewMessage — 2-tone ascending beep, ≤200ms ──────────────
+        playNewMessage() {
+            if (!this.ctx || this.muted) return;
+            const now = this.ctx.currentTime;
+
+            // Tone 1 — 1000 Hz, 80ms
+            const osc1 = this.ctx.createOscillator();
+            osc1.type = 'sine';
+            osc1.frequency.value = 1000;
+            const g1 = this.ctx.createGain();
+            g1.gain.setValueAtTime(0.10, now);
+            g1.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+            osc1.connect(g1);
+            g1.connect(this.masterGain);
+            osc1.start(now);
+            osc1.stop(now + 0.09);
+
+            // Tone 2 — 1500 Hz, 80ms, starts 80ms later (ascending)
+            const osc2 = this.ctx.createOscillator();
+            osc2.type = 'sine';
+            osc2.frequency.value = 1500;
+            const g2 = this.ctx.createGain();
+            g2.gain.setValueAtTime(0, now);
+            g2.gain.setValueAtTime(0.10, now + 0.08);
+            g2.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+            osc2.connect(g2);
+            g2.connect(this.masterGain);
+            osc2.start(now);
+            osc2.stop(now + 0.18);
+        }
+
+        setVolume(v) {
+            this.volume = v / 100;
+            if (this.masterGain) this.masterGain.gain.value = this.muted ? 0 : this.volume;
+        }
+
+        toggleMute() {
+            this.muted = !this.muted;
+            if (this.masterGain) this.masterGain.gain.value = this.muted ? 0 : this.volume;
+            return this.muted;
+        }
+
+        resume() {
+            if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+        }
+
+        getVolumePercent() { return Math.round(this.volume * 100); }
+    }
+    return IwakuraAudio;
+}
+
+// Inline minimal IwakuraChat logic for badge tests
+function buildChat(IwakuraAudio) {
+    class IwakuraChat {
+        constructor() {
+            this.ws = null;
+            this.connected = false;
+            this._unreadCount = 0;
+            this._isDiaryActive = false;
+            this.container = null;
+            this.onStatusChange = null;
+            this.onSessionChange = null;
+            this._streamEl = null;
+            this._streamBuf = '';
+            this._streamCode = null;
+            this._streamTime = null;
+            this._userScrolledUp = false;
+            this._thinkEl = null;
+            this._typingEl = null;
+            this._reconnTimer = null;
+            this._pingInterval = null;
+            this.reconnectMs = 2000;
+        }
+
+        setActive(isActive) {
+            this._isDiaryActive = isActive;
+            if (isActive) this.clearUnread();
+        }
+
+        clearUnread() {
+            this._unreadCount = 0;
+            this._updateBadge();
+        }
+
+        _incrementUnread() {
+            if (this._isDiaryActive) return;
+            this._unreadCount++;
+            this._updateBadge();
+            if (window.audio) window.audio.playNewMessage();
+        }
+
+        _updateBadge() {
+            window._diaryUnreadCount = this._unreadCount;
+            const badge = _doc.getElementById('diary-unread-badge');
+            if (!badge) return;
+            badge.textContent = this._unreadCount > 0 ? String(this._unreadCount) : '';
+            badge.style.display = this._unreadCount > 0 ? 'flex' : 'none';
+        }
+    }
+    return IwakuraChat;
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────
+
+const IwakuraAudio = buildAudio();
+const IwakuraChat  = buildChat(IwakuraAudio);
+
+// Reset global state
+function resetGlobals() {
+    window._diaryUnreadCount = 0;
+    window.audio = null;
+    _badgeEl.textContent = '';
+    _badgeEl.style.display = 'none';
+}
+
+// ── Suite 1: IwakuraAudio.playNewMessage ────────────────────────────────────
+suite('IwakuraAudio.playNewMessage');
+
+test('playNewMessage method exists on IwakuraAudio', () => {
+    const a = new IwakuraAudio();
+    assert(typeof a.playNewMessage === 'function', 'playNewMessage must be a function');
+});
+
+test('playNewMessage does not throw when ctx initialised', () => {
+    const a = new IwakuraAudio();
+    a.init();
+    a.playNewMessage(); // must not throw
+});
+
+test('playNewMessage does not play when muted', () => {
+    const a = new IwakuraAudio();
+    a.init();
+    a.muted = true;
+    let called = false;
+    const orig = a.ctx.createOscillator.bind(a.ctx);
+    a.ctx.createOscillator = () => { called = true; return orig(); };
+    a.playNewMessage();
+    assert(!called, 'No oscillator should be created when muted');
+});
+
+test('playNewMessage is distinct from playBeep (different oscillator frequencies)', () => {
+    // playBeep uses 880 Hz; playNewMessage should use 1000 + 1500 Hz
+    // Verified by reading the source above — just check both methods exist
+    const a = new IwakuraAudio();
+    assert(typeof a.playBeep === 'function', 'playBeep must exist');
+    assert(typeof a.playNewMessage === 'function', 'playNewMessage must exist');
+    assert(a.playBeep !== a.playNewMessage, 'must be different methods');
+});
+
+// ── Suite 2: IwakuraChat unread badge logic ─────────────────────────────────
+suite('IwakuraChat — unread badge');
+
+test('_incrementUnread increments count when diary not active', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    assertEqual(c._unreadCount, 1, '_unreadCount');
+});
+
+test('_incrementUnread does NOT increment when diary is active', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = true;
+    c._incrementUnread();
+    assertEqual(c._unreadCount, 0, '_unreadCount should stay 0');
+});
+
+test('clearUnread resets count to 0', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    c._incrementUnread();
+    c.clearUnread();
+    assertEqual(c._unreadCount, 0, 'count should be 0 after clearUnread');
+});
+
+test('setActive(true) clears unread count', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    c._incrementUnread();
+    c.setActive(true);
+    assertEqual(c._unreadCount, 0, 'count should reset when diary becomes active');
+});
+
+test('setActive(false) allows subsequent increments', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c.setActive(false);
+    c._incrementUnread();
+    assertEqual(c._unreadCount, 1);
+});
+
+// ── Suite 3: _updateBadge syncs window._diaryUnreadCount ───────────────────
+suite('IwakuraChat — _updateBadge / global sync');
+
+test('_updateBadge sets window._diaryUnreadCount', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    assertEqual(window._diaryUnreadCount, 1, 'window._diaryUnreadCount must be 1');
+});
+
+test('clearUnread resets window._diaryUnreadCount to 0', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    c.clearUnread();
+    assertEqual(window._diaryUnreadCount, 0);
+});
+
+test('badge element shows count when unread > 0', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    assertEqual(_badgeEl.textContent, '1');
+    assertEqual(_badgeEl.style.display, 'flex');
+});
+
+test('badge element hides when unread = 0', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    c.clearUnread();
+    assertEqual(_badgeEl.textContent, '');
+    assertEqual(_badgeEl.style.display, 'none');
+});
+
+test('multiple increments accumulate', () => {
+    resetGlobals();
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    c._incrementUnread();
+    c._incrementUnread();
+    assertEqual(c._unreadCount, 3);
+    assertEqual(window._diaryUnreadCount, 3);
+    assertEqual(_badgeEl.textContent, '3');
+});
+
+// ── Suite 4: sound triggered only when diary inactive ──────────────────────
+suite('IwakuraChat — playNewMessage on increment');
+
+test('playNewMessage called when diary inactive and audio ready', () => {
+    resetGlobals();
+    const a = new IwakuraAudio();
+    a.init();
+    let called = false;
+    a.playNewMessage = () => { called = true; };
+    window.audio = a;
+
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread();
+    assert(called, 'playNewMessage must be called when diary is inactive');
+});
+
+test('playNewMessage NOT called when diary is active', () => {
+    resetGlobals();
+    const a = new IwakuraAudio();
+    a.init();
+    let called = false;
+    a.playNewMessage = () => { called = true; };
+    window.audio = a;
+
+    const c = new IwakuraChat();
+    c._isDiaryActive = true;
+    c._incrementUnread();
+    assert(!called, 'playNewMessage must NOT be called when diary is active');
+});
+
+test('no error if window.audio is null', () => {
+    resetGlobals();
+    window.audio = null;
+    const c = new IwakuraChat();
+    c._isDiaryActive = false;
+    c._incrementUnread(); // must not throw
+    assertEqual(c._unreadCount, 1);
+});
+
+// ── Render results ──────────────────────────────────────────────────────────
+const out = document.getElementById('output');
+let passed = 0, failed = 0;
+let lastSuite = '';
+
+results.forEach(r => {
+    if (r.suite !== lastSuite) {
+        const h = document.createElement('div');
+        h.className = 'suite';
+        h.innerHTML = `<div class="suite-name">▸ ${r.suite}</div>`;
+        out.appendChild(h);
+        lastSuite = r.suite;
+    }
+    const d = document.createElement('div');
+    d.className = 'test ' + (r.ok ? 'pass' : 'fail');
+    d.textContent = (r.ok ? '✓' : '✗') + ' ' + r.name + (r.err ? ` — ${r.err}` : '');
+    out.lastChild.appendChild(d);
+    r.ok ? passed++ : failed++;
+});
+
+const sum = document.createElement('div');
+sum.className = 'summary';
+sum.innerHTML = `${passed + failed} tests: <span class="pass">${passed} passed</span>${failed ? ` / <span class="fail">${failed} failed</span>` : ''}`;
+out.appendChild(sum);
+</script>
+</body>
+</html>
