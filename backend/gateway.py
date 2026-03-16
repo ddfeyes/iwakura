@@ -1,4 +1,10 @@
-"""OpenClaw gateway client — runs openclaw agent subprocess for synchronous responses."""
+"""OpenClaw gateway client — runs openclaw agent subprocess for synchronous responses.
+
+We use the `openclaw agent --json` CLI rather than the HTTP hooks endpoint because
+POST /hooks/agent is fire-and-forget (returns {"ok":true,"runId":"..."} immediately
+with no way to retrieve the response text via HTTP).  The CLI is synchronous and
+returns the full response inline, which is what the WebSocket chat flow requires.
+"""
 import asyncio
 import json
 import os
@@ -27,7 +33,8 @@ def get_gateway_url() -> str:
 
 
 def get_hook_token() -> str:
-    token = os.environ.get("OPENCLAW_HOOK_TOKEN")
+    # Support both OPENCLAW_TOKEN and OPENCLAW_HOOK_TOKEN
+    token = os.environ.get("OPENCLAW_TOKEN") or os.environ.get("OPENCLAW_HOOK_TOKEN")
     if token:
         return token
     cfg = _read_config()
