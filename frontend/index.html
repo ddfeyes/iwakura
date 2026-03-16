@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IWAKURA // WIRED ACCESS POINT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- CRT Scanlines overlay -->
+<div id="scanlines"></div>
+
+<!-- ── BOOT SCREEN ─────────────────────────────────────── -->
+<div id="screen-boot" class="screen active">
+    <canvas id="boot-rain"></canvas>
+    <div class="boot-ui">
+        <div class="boot-logo">
+            <span class="logo-bracket">[</span>
+            <span class="logo-text">IWAKURA</span>
+            <span class="logo-bracket">]</span>
+        </div>
+        <div class="boot-divider"></div>
+        <div class="boot-authorize">AUTHORIZE USER</div>
+        <div class="boot-cursor">▋</div>
+        <div class="boot-status-text" id="boot-status-text">INITIALIZING...</div>
+        <div class="boot-progress">
+            <div class="progress-dots" id="boot-progress-dots"></div>
+        </div>
+        <div class="boot-site-info">
+            SITE A / LEVEL. 10 &nbsp;&nbsp; GATE PASS: <span class="orange">GRANTED</span>
+        </div>
+    </div>
+</div>
+
+<!-- ── HUB SCREEN ─────────────────────────────────────── -->
+<div id="screen-hub" class="screen">
+    <canvas id="hub-canvas"></canvas>
+
+    <!-- Nav label overlays (positioned via JS) -->
+    <div id="hub-nav-labels">
+        <div class="nav-label-item" data-target="diary">
+            <div class="nav-label-code">Lda020</div>
+            <div class="nav-label-name">DIARY</div>
+        </div>
+        <div class="nav-label-item" data-target="status">
+            <div class="nav-label-code">Tda040</div>
+            <div class="nav-label-name">STATUS</div>
+        </div>
+        <div class="nav-label-item" data-target="memory">
+            <div class="nav-label-code">Wld033</div>
+            <div class="nav-label-name">MEMORY</div>
+        </div>
+        <div class="nav-label-item" data-target="psyche">
+            <div class="nav-label-code">Ira007</div>
+            <div class="nav-label-name">PSYCHE</div>
+        </div>
+    </div>
+
+    <div class="hub-ui">
+        <div class="hub-header">
+            <span class="header-code green">Nda001</span>
+            <span class="header-title">THE WIRED // ACCESS POINT</span>
+            <span class="header-code green">Ira042</span>
+        </div>
+        <div class="hub-center-label">
+            <div class="center-name">L A I N</div>
+            <div class="center-status" id="hub-lain-status">● PRESENT</div>
+        </div>
+        <div class="hub-footer">
+            <span class="dim">SITE A</span>
+            <span class="orange">▸</span>
+            <span class="dim">LEVEL. 10</span>
+            <span class="hub-sep"></span>
+            <span class="cyan" id="hub-session-id">SESSION: --</span>
+        </div>
+    </div>
+</div>
+
+<!-- ── DIARY SCREEN (Chat) ────────────────────────────── -->
+<div id="screen-diary" class="screen">
+    <div class="screen-header">
+        <button class="back-btn" data-target="hub">◀ RETURN</button>
+        <span class="screen-title">DIARY // DIRECT LINE</span>
+        <span class="screen-code green">Lda020</span>
+    </div>
+    <div class="diary-messages" id="diary-messages">
+        <div class="diary-intro-msg">
+            <span class="intro-code orange">Lda001</span>
+            <span class="intro-text">You are connected to the Wired. Lain is present.</span>
+        </div>
+    </div>
+    <div class="diary-input-area">
+        <div class="input-row">
+            <span class="prompt-sym orange">▸</span>
+            <input type="text" id="diary-input" placeholder="TRANSMIT MESSAGE..." autocomplete="off" spellcheck="false">
+            <button id="diary-send" class="send-btn">SEND</button>
+        </div>
+        <div class="input-tags-row" id="diary-tags"></div>
+    </div>
+    <div class="diary-status-bar">
+        <span id="diary-ws-status" class="ws-disconnected">● DISCONNECTED</span>
+        <span id="diary-session-label" class="dim">SESSION: --</span>
+        <button id="diary-reset" class="ghost-btn">RESET SESSION</button>
+    </div>
+</div>
+
+<!-- ── STATUS SCREEN ──────────────────────────────────── -->
+<div id="screen-status" class="screen">
+    <div class="screen-header">
+        <button class="back-btn" data-target="hub">◀ RETURN</button>
+        <span class="screen-title">STATUS // SYSTEM MONITOR</span>
+        <span class="screen-code green">Tda040</span>
+    </div>
+    <div class="status-grid" id="status-content">
+        <div class="screen-loading green">SCANNING SYSTEMS<span class="loading-dots"></span></div>
+    </div>
+    <div class="status-footer">
+        <span class="green" id="status-timestamp">--</span>
+        <button id="status-refresh" class="refresh-btn">↻ REFRESH</button>
+    </div>
+</div>
+
+<!-- ── MEMORY SCREEN ──────────────────────────────────── -->
+<div id="screen-memory" class="screen">
+    <div class="screen-header">
+        <button class="back-btn" data-target="hub">◀ RETURN</button>
+        <span class="screen-title">MEMORY // FILE ACCESS</span>
+        <span class="screen-code green">Wld033</span>
+    </div>
+    <div class="memory-layout">
+        <div class="memory-sidebar" id="memory-list">
+            <div class="screen-loading purple">RETRIEVING FILES<span class="loading-dots"></span></div>
+        </div>
+        <div class="memory-viewer" id="memory-viewer">
+            <div class="viewer-empty">
+                <span class="viewer-empty-label">SELECT FILE TO ACCESS</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── PSYCHE SCREEN ──────────────────────────────────── -->
+<div id="screen-psyche" class="screen">
+    <div class="screen-header">
+        <button class="back-btn" data-target="hub">◀ RETURN</button>
+        <span class="screen-title">PSYCHE // INTERNAL STATE</span>
+        <span class="screen-code green">Ira007</span>
+    </div>
+    <div class="psyche-grid" id="psyche-content">
+        <div class="screen-loading purple">ACCESSING INNER LAYERS<span class="loading-dots"></span></div>
+    </div>
+</div>
+
+<!-- ── VOLUME CONTROL ─────────────────────────────────── -->
+<div id="volume-control">
+    <span class="vol-icon" id="vol-icon">♪</span>
+    <input type="range" id="volume-slider" min="0" max="100" value="30">
+    <span class="vol-label">VOL</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
