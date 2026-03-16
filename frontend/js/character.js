@@ -363,3 +363,5 @@ class LainCharacter {
 `;
     document.head.appendChild(style);
 })();
+
+window.LainCharacter = LainCharacter;
