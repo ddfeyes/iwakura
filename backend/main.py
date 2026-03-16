@@ -4,6 +4,7 @@ import logging
 import pathlib
 import random
 import time
+from datetime import datetime
 import yaml
 import markdown as md_lib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -19,8 +20,28 @@ logger = logging.getLogger(__name__)
 FRONTEND_DIR = pathlib.Path(__file__).parent.parent / "frontend"
 LAIN_MEMORY = pathlib.Path.home() / "agents" / "lain" / "memory"
 LAIN_WORKSPACE = pathlib.Path.home() / "agents" / "lain"
+DIARY_HISTORY_FILE = pathlib.Path(__file__).parent / "diary_history.json"
 
 app = FastAPI(title="Iwakura Platform", docs_url=None, redoc_url=None)
+
+# ── Diary history ─────────────────────────────────────────────────────────────
+
+def load_diary_history() -> list[dict]:
+    try:
+        if DIARY_HISTORY_FILE.exists():
+            return json.loads(DIARY_HISTORY_FILE.read_text())
+    except Exception:
+        pass
+    return []
+
+
+def save_diary_entry(entry: dict):
+    h = load_diary_history()
+    h.append(entry)
+    if len(h) > 200:
+        h = h[-200:]
+    DIARY_HISTORY_FILE.write_text(json.dumps(h, ensure_ascii=False))
+
 
 # ── File code generation ─────────────────────────────────────────────────────
 
@@ -55,16 +76,26 @@ async def ws_chat(websocket: WebSocket):
                 if not text:
                     continue
 
+                # Persist user message
+                save_diary_entry({
+                    "role": "user",
+                    "text": text,
+                    "code": gen_file_code(),
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                })
+
                 # Send thinking indicator immediately
                 await websocket.send_json({"type": "thinking"})
 
                 file_code = gen_file_code()
                 timestamp = time.strftime("%H:%M")
                 token_count = 0
+                response_tokens: list[str] = []
 
                 # Stream tokens to the frontend line by line
                 async for chunk in gateway.stream_message(text):
                     token_count += 1
+                    response_tokens.append(chunk)
                     if token_count == 1:
                         # First token carries header info so frontend creates the bubble
                         await websocket.send_json({
@@ -82,6 +113,13 @@ async def ws_chat(websocket: WebSocket):
                         "sessionId": gateway.get_current_session_id() or "",
                         "fileCode": file_code,
                         "timestamp": timestamp,
+                    })
+                    # Persist Lain response
+                    save_diary_entry({
+                        "role": "lain",
+                        "text": "\n".join(response_tokens),
+                        "code": file_code,
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
                     })
                 else:
                     await websocket.send_json({
@@ -108,6 +146,11 @@ async def ws_chat(websocket: WebSocket):
 
 
 # ── REST API ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/diary/history")
+async def api_diary_history():
+    return load_diary_history()[-50:]
+
 
 @app.get("/api/status")
 async def api_status():
