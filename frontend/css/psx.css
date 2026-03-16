@@ -171,6 +171,91 @@
     box-shadow: 0 0 6px rgba(255, 140, 0, 0.4);
 }
 
+/* ── Hotkeys help button + overlay ─────────────────────────── */
+
+/* Fixed bottom-left [ ? ] button */
+.hotkeys-btn {
+    position: fixed;
+    bottom: 14px;
+    left: 14px;
+    z-index: 10000;
+    background: transparent;
+    border: 1px solid var(--color-accent-orange);
+    color: var(--color-accent-orange);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    padding: 3px 8px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s, box-shadow 0.2s;
+}
+.hotkeys-btn:hover {
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(255, 140, 0, 0.5);
+}
+
+/* Full-screen dim backdrop */
+.hotkeys-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.65);
+}
+.hotkeys-overlay.hidden { display: none; }
+
+/* Centered panel */
+.hotkeys-panel {
+    background: rgba(10, 10, 30, 0.97);
+    border: 1px solid var(--color-accent-orange);
+    box-shadow: 0 0 30px rgba(255, 140, 0, 0.2), inset 0 0 20px rgba(0, 0, 0, 0.5);
+    padding: 20px 28px;
+    min-width: 320px;
+    max-width: 420px;
+    font-family: 'Share Tech Mono', monospace;
+}
+
+.hotkeys-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    margin-bottom: 8px;
+}
+.hotkeys-close {
+    color: var(--color-accent-orange);
+    cursor: pointer;
+    opacity: 0.7;
+    font-size: 11px;
+}
+.hotkeys-close:hover { opacity: 1; }
+
+/* Two-column shortcuts table */
+.hotkeys-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 12px;
+}
+.hotkeys-table th {
+    text-align: left;
+    padding: 8px 0 4px;
+    letter-spacing: 0.12em;
+    font-weight: normal;
+}
+.hotkeys-table td {
+    padding: 3px 0;
+    color: var(--color-text);
+}
+.hotkeys-table td:first-child {
+    width: 60px;
+    font-weight: bold;
+}
+
 /* Inline purge confirmation prompt */
 .purge-prompt {
     padding: 10px 0;

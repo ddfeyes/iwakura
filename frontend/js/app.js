@@ -281,14 +281,7 @@
         });
     });
 
-    // ── Global ESC → return to hub ────────────────────────────
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && currentScreen !== 'boot' && currentScreen !== 'hub') {
-            if (window.audio) window.audio.playClick();
-            showScreen('hub');
-        }
-    });
+    // ESC and screen shortcuts are handled by hotkeys.js
 
     // ── Status refresh ────────────────────────────────────────
 
@@ -358,10 +351,26 @@
         // Start flicker after boot sequence completes
         setTimeout(() => glitchFX.startFlicker(), 4000);
 
+        // Init hotkeys
+        window.hotkeys = new IwakuraHotkeys(
+            showScreen,
+            () => window.audio ? window.audio.toggleMute() : false
+        );
+        window.hotkeys.init();
+
+        // Wire up close button in hotkey overlay
+        const hkClose = document.getElementById('hotkeys-close');
+        if (hkClose) hkClose.addEventListener('click', () => window.hotkeys._hideHelp());
+
         // Show boot screen (already marked active in HTML)
         runBoot();
     });
 
-    // Expose for debugging
-    window.iwakura = { showScreen, loadStatus, initMemory, loadPsyche, getPsyche: () => psyche };
+    // Expose for debugging and hotkeys
+    window.iwakura = {
+        showScreen,
+        loadStatus, initMemory, loadPsyche,
+        getPsyche: () => psyche,
+        currentScreen: () => currentScreen,
+    };
 })();
