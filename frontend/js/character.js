@@ -1,572 +1,500 @@
-/* ── Lain Iwakura Character — PSX SVG Renderer + Animations ──────────────────
-   Renders an animated Lain Iwakura figure in SVG.
-
-   Proportions: anime (head ≈ 1/6 body height), PSX limited palette.
-   ViewBox: 0 0 120 300
-   Animations: idle breathe, hair sway, periodic blink, weight shift,
-               thinking (head tilt + arm), talking (mouth), surprised (lean).
-
-   Public API:
-     const lain = new LainCharacter();
-     lain.init(containerEl);      // renders SVG into container
-     lain.setState('thinking');   // transitions animation state
-     lain.getState();             // → 'idle' | 'thinking' | 'talking' | 'surprised'
-     lain.destroy();              // clears timers
+/* ── LainCharacter ─ Canvas pixel sprite animator ──────────────────────────
+   PSX game–style pixel art. Drawn frame-by-frame with Canvas 2D API.
+   Native resolution 64×128 px, displayed 3× (192×384) for chunky pixel look.
+   School uniform: dark navy blazer, white shirt, red ribbon, dark pleated skirt.
+   Short brown bob, large anime eyes, PSX limited colour palette.
+   States: idle | thinking | curious | talking | surprised
    ─────────────────────────────────────────────────────────────────────────── */
 
-(function (global) {
-    'use strict';
-
-    const SVG_NS   = 'http://www.w3.org/2000/svg';
-    const VIEW_W   = 120;
-    const VIEW_H   = 300;
-    const VALID_STATES = ['idle', 'thinking', 'talking', 'surprised'];
-
-    // PSX limited palette
-    const C = {
-        bg:      '#050510',
-        dark:    '#0a0a1a',
-        hair:    '#1e0e04',
-        face:    '#0c0922',
-        uniform: '#10102c',
-        skirt:   '#0d0d28',
-        cyan:    '#00d4aa',
-        purple:  '#8b7cc8',
-    };
-
-    // CSS styles injected once into document.head
-    const STYLES = `
-        .lain-char-svg {
-            width: 100%;
-            height: 100%;
-            display: block;
-            overflow: visible;
-            filter:
-                drop-shadow(0 0 5px rgba(0,212,170,0.55))
-                drop-shadow(0 0 16px rgba(0,212,170,0.25));
-        }
-        .lain-char-svg * {
-            transform-box: fill-box;
-            transform-origin: center;
-        }
-
-        /* ── Idle: breathe ──────────────────────────── */
-        #lc-body-group {
-            animation: lc-breathe 3.6s ease-in-out infinite;
-        }
-        @keyframes lc-breathe {
-            0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(-1.8px); }
-        }
-
-        /* ── Idle: hair sway ────────────────────────── */
-        #lc-hair {
-            transform-origin: 60px 14px;
-            animation: lc-hair-sway 5.5s ease-in-out infinite;
-        }
-        @keyframes lc-hair-sway {
-            0%, 100% { transform: rotate(0deg); }
-            33%      { transform: rotate(0.9deg); }
-            66%      { transform: rotate(-0.9deg); }
-        }
-
-        /* ── Blink (triggered via JS class) ────────── */
-        @keyframes lc-blink {
-            0%, 100% { transform: scaleY(1); }
-            50%      { transform: scaleY(0.06); }
-        }
-        #lc-eyes-group.is-blinking {
-            animation: lc-blink 0.12s ease-in-out;
-        }
-
-        /* ── Weight shift (triggered via JS classes) ─ */
-        @keyframes lc-shift-left {
-            0%   { transform: translateX(0) rotate(0deg); }
-            100% { transform: translateX(-2.5px) rotate(-0.4deg); }
-        }
-        @keyframes lc-shift-right {
-            0%   { transform: translateX(0) rotate(0deg); }
-            100% { transform: translateX(2.5px) rotate(0.4deg); }
-        }
-        #lc-root.shift-left  { animation: lc-shift-left  1.3s ease-in-out forwards; }
-        #lc-root.shift-right { animation: lc-shift-right 1.3s ease-in-out forwards; }
-
-        /* ── Thinking state ─────────────────────────── */
-        [data-state="thinking"] #lc-head-group {
-            animation: lc-head-tilt 0.5s ease forwards;
-        }
-        [data-state="thinking"] #lc-arm-r {
-            transform-origin: 80px 88px;
-            animation: lc-arm-think 0.5s ease forwards;
-        }
-        @keyframes lc-head-tilt {
-            to { transform: rotate(8deg) translateX(4px); }
-        }
-        @keyframes lc-arm-think {
-            to { transform: rotate(-55deg); }
-        }
-
-        /* ── Surprised state ────────────────────────── */
-        [data-state="surprised"] #lc-root {
-            animation: lc-lean-back 0.3s ease forwards;
-        }
-        [data-state="surprised"] #lc-eyes-group {
-            animation: lc-eyes-wide 0.3s ease forwards;
-        }
-        @keyframes lc-lean-back {
-            to { transform: rotate(-3.5deg) translateY(3px); }
-        }
-        @keyframes lc-eyes-wide {
-            to { transform: scaleY(1.35); }
-        }
-    `;
-
-    // ──────────────────────────────────────────────────────────────────────────
-
-    class LainCharacter {
-        constructor() {
-            this._svg      = null;
-            this._state    = 'idle';
-            this._timers   = [];
-            this._talkInt  = null;
-        }
-
-        // ── Public API ───────────────────────────────────────────
-
-        init(container) {
-            container.innerHTML = '';
-            this._ensureStyles();
-            this._svg = this._buildSVG();
-            container.appendChild(this._svg);
-            this._startIdleLoop();
-        }
-
-        setState(state) {
-            if (!VALID_STATES.includes(state)) return;
-            const prev = this._state;
-            this._state = state;
-            if (this._svg) this._svg.setAttribute('data-state', state);
-
-            // Stop talking interval when leaving talking state
-            if (prev === 'talking' && state !== 'talking') {
-                this._stopTalk();
-            }
-            if (state === 'talking') {
-                this._startTalk();
-            }
-            if (state === 'idle') {
-                this._clearShiftClasses();
-            }
-        }
-
-        getState() { return this._state; }
-
-        destroy() {
-            this._timers.forEach(t => clearTimeout(t));
-            this._timers = [];
-            this._stopTalk();
-        }
-
-        // ── Styles ─────────────────────────────────────────────
-
-        _ensureStyles() {
-            if (!document.getElementById('lain-char-styles')) {
-                const s = document.createElement('style');
-                s.id = 'lain-char-styles';
-                s.textContent = STYLES;
-                document.head.appendChild(s);
-            }
-        }
-
-        // ── SVG Construction ────────────────────────────────────
-
-        _buildSVG() {
-            const svg = this._el('svg', {
-                viewBox:      `0 0 ${VIEW_W} ${VIEW_H}`,
-                class:        'lain-char-svg',
-                fill:         'none',
-                xmlns:        SVG_NS,
-                'data-state': 'idle',
-            });
-
-            const root = this._el('g', { id: 'lc-root' });
-
-            // Draw order: hair behind, then face, then body in front
-            root.appendChild(this._buildHair());
-            root.appendChild(this._buildFace());
-            root.appendChild(this._buildNeck());
-            root.appendChild(this._buildBody());
-
-            svg.appendChild(root);
-            return svg;
-        }
-
-        // ── Hair ────────────────────────────────────────────────
-        _buildHair() {
-            const g = this._el('g', { id: 'lc-hair' });
-
-            // Outer bob — comes down past ears to chin level (≈y=97)
-            g.appendChild(this._el('path', {
-                id:             'lc-hair-outer',
-                d: [
-                    'M60,8',
-                    'C84,8 103,28 103,55',
-                    'C103,74 95,92 87,98',
-                    'L87,70',
-                    'C87,36 76,14 60,14',
-                    'C44,14 33,36 33,70',
-                    'L33,98',
-                    'C25,92 17,74 17,55',
-                    'C17,28 36,8 60,8Z',
-                ].join(' '),
-                fill:           C.hair,
-                stroke:         C.cyan,
-                'stroke-width': '1',
-            }));
-
-            // Bangs — drape over upper forehead
-            g.appendChild(this._el('path', {
-                id:             'lc-bangs',
-                d: [
-                    'M33,57',
-                    'C35,33 44,16 60,15',
-                    'C76,16 85,33 87,57',
-                    'C79,49 70,44 60,44',
-                    'C50,44 41,49 33,57Z',
-                ].join(' '),
-                fill:           C.hair,
-                stroke:         C.cyan,
-                'stroke-width': '0.55',
-            }));
-
-            return g;
-        }
-
-        // ── Face ────────────────────────────────────────────────
-        _buildFace() {
-            const g = this._el('g', { id: 'lc-head-group' });
-
-            // Face oval — anime: slightly narrow, large vertical extent
-            // cy=46, ry=28 → face y: 18–74 (head height ≈ 56 px / 300 ≈ 1/5.4)
-            g.appendChild(this._el('ellipse', {
-                id:             'lc-face',
-                cx:             '60',
-                cy:             '46',
-                rx:             '22',
-                ry:             '28',
-                fill:           C.face,
-                stroke:         C.cyan,
-                'stroke-width': '0.8',
-            }));
-
-            // ── Eyes ──────────────────────────────────────────
-            const eyes = this._el('g', { id: 'lc-eyes-group' });
-
-            // Left eye
-            const el = this._el('g', { id: 'lc-eye-l' });
-            el.appendChild(this._el('ellipse', {
-                cx: '47', cy: '40', rx: '7.5', ry: '9',
-                fill: '#06062a', stroke: C.cyan, 'stroke-width': '0.8',
-            }));
-            // Catchlight highlight
-            el.appendChild(this._el('ellipse', {
-                cx: '49', cy: '36', rx: '2.5', ry: '3',
-                fill: C.cyan, opacity: '0.55',
-            }));
-            eyes.appendChild(el);
-
-            // Right eye
-            const er = this._el('g', { id: 'lc-eye-r' });
-            er.appendChild(this._el('ellipse', {
-                cx: '73', cy: '40', rx: '7.5', ry: '9',
-                fill: '#06062a', stroke: C.cyan, 'stroke-width': '0.8',
-            }));
-            er.appendChild(this._el('ellipse', {
-                cx: '75', cy: '36', rx: '2.5', ry: '3',
-                fill: C.cyan, opacity: '0.55',
-            }));
-            eyes.appendChild(er);
-
-            g.appendChild(eyes);
-
-            // ── Eyebrows ───────────────────────────────────────
-            g.appendChild(this._el('path', {
-                id:             'lc-brow-l',
-                d:              'M40,29 Q47,27 54,28',
-                stroke:         '#2a1408',
-                'stroke-width': '1.7',
-                'stroke-linecap': 'round',
-            }));
-            g.appendChild(this._el('path', {
-                id:             'lc-brow-r',
-                d:              'M66,28 Q73,27 80,29',
-                stroke:         '#2a1408',
-                'stroke-width': '1.7',
-                'stroke-linecap': 'round',
-            }));
-
-            // ── Nose (minimal) ─────────────────────────────────
-            g.appendChild(this._el('path', {
-                id:             'lc-nose',
-                d:              'M59,54 L61,56',
-                stroke:         C.cyan,
-                'stroke-width': '0.5',
-                opacity:        '0.35',
-                'stroke-linecap': 'round',
-            }));
-
-            // ── Mouth ──────────────────────────────────────────
-            g.appendChild(this._el('path', {
-                id:             'lc-mouth',
-                d:              'M53,62 Q60,66 67,62',
-                stroke:         C.cyan,
-                'stroke-width': '0.9',
-                'stroke-linecap': 'round',
-                opacity:        '0.7',
-            }));
-
-            return g;
-        }
-
-        // ── Neck ─────────────────────────────────────────────
-        _buildNeck() {
-            return this._el('rect', {
-                id:             'lc-neck',
-                x:              '53',
-                y:              '72',
-                width:          '14',
-                height:         '15',
-                fill:           C.face,
-                stroke:         C.cyan,
-                'stroke-width': '0.6',
-            });
-        }
-
-        // ── Body (arms + torso + skirt + legs) ───────────────
-        _buildBody() {
-            const g = this._el('g', { id: 'lc-body-group' });
-
-            // Left arm (at side, slightly away from torso)
-            g.appendChild(this._el('path', {
-                id:             'lc-arm-l',
-                d:              'M40,88 L25,93 L21,172 L39,172',
-                fill:           C.uniform,
-                stroke:         C.cyan,
-                'stroke-width': '0.7',
-            }));
-
-            // Right arm — default position (thinking state rotates this)
-            g.appendChild(this._el('path', {
-                id:             'lc-arm-r',
-                d:              'M80,88 L95,93 L99,172 L81,172',
-                fill:           C.uniform,
-                stroke:         C.cyan,
-                'stroke-width': '0.7',
-            }));
-
-            // Main torso (sailor uniform top)
-            g.appendChild(this._el('path', {
-                id:             'lc-torso',
-                d:              'M37,87 Q60,82 83,87 L87,172 L33,172 Z',
-                fill:           C.uniform,
-                stroke:         C.cyan,
-                'stroke-width': '0.8',
-            }));
-
-            // Sailor collar (V shape)
-            g.appendChild(this._el('path', {
-                id:             'lc-collar',
-                d:              'M46,87 L60,116 L74,87 L68,87 L60,110 L52,87 Z',
-                fill:           '#14142e',
-                stroke:         C.cyan,
-                'stroke-width': '0.6',
-            }));
-
-            // Collar stripe (purple tint — sailor school aesthetic)
-            g.appendChild(this._el('path', {
-                id:             'lc-collar-stripe',
-                d:              'M46,91 L52,91 L60,112 L68,91 L74,91',
-                fill:           'none',
-                stroke:         C.purple,
-                'stroke-width': '1.1',
-            }));
-
-            // Left hand
-            g.appendChild(this._el('ellipse', {
-                id:             'lc-hand-l',
-                cx:             '21',
-                cy:             '176',
-                rx:             '7',
-                ry:             '5',
-                fill:           C.face,
-                stroke:         C.cyan,
-                'stroke-width': '0.5',
-            }));
-
-            // Right hand
-            g.appendChild(this._el('ellipse', {
-                id:             'lc-hand-r',
-                cx:             '99',
-                cy:             '176',
-                rx:             '7',
-                ry:             '5',
-                fill:           C.face,
-                stroke:         C.cyan,
-                'stroke-width': '0.5',
-            }));
-
-            // Skirt (dark navy, A-line flare)
-            g.appendChild(this._el('path', {
-                id:             'lc-skirt',
-                d:              'M33,167 L87,167 L97,246 L23,246 Z',
-                fill:           C.skirt,
-                stroke:         C.purple,
-                'stroke-width': '0.8',
-            }));
-
-            // Skirt hem accent
-            g.appendChild(this._el('line', {
-                x1: '23', y1: '246', x2: '97', y2: '246',
-                stroke:         C.cyan,
-                'stroke-width': '0.5',
-                opacity:        '0.45',
-            }));
-
-            // Left leg (dark stocking)
-            g.appendChild(this._el('rect', {
-                id:             'lc-leg-l',
-                x:              '33',
-                y:              '246',
-                width:          '21',
-                height:         '48',
-                fill:           '#080818',
-                stroke:         C.cyan,
-                'stroke-width': '0.5',
-            }));
-
-            // Right leg
-            g.appendChild(this._el('rect', {
-                id:             'lc-leg-r',
-                x:              '66',
-                y:              '246',
-                width:          '21',
-                height:         '48',
-                fill:           '#080818',
-                stroke:         C.cyan,
-                'stroke-width': '0.5',
-            }));
-
-            // Left foot
-            g.appendChild(this._el('ellipse', {
-                id:             'lc-foot-l',
-                cx:             '43',
-                cy:             '295',
-                rx:             '12',
-                ry:             '5',
-                fill:           C.dark,
-                stroke:         C.cyan,
-                'stroke-width': '0.6',
-            }));
-
-            // Right foot
-            g.appendChild(this._el('ellipse', {
-                id:             'lc-foot-r',
-                cx:             '77',
-                cy:             '295',
-                rx:             '12',
-                ry:             '5',
-                fill:           C.dark,
-                stroke:         C.cyan,
-                'stroke-width': '0.6',
-            }));
-
-            return g;
-        }
-
-        // ── SVG element helper ──────────────────────────────────
-        _el(tag, attrs) {
-            const el = document.createElementNS(SVG_NS, tag);
-            if (attrs) Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
-            return el;
-        }
-
-        // ── Idle animation loops ────────────────────────────────
-
-        _startIdleLoop() {
-            this._scheduleBlink();
-            this._scheduleShift();
-        }
-
-        _scheduleBlink() {
-            const delay = 3000 + Math.random() * 4000;
-            const t = setTimeout(() => {
-                this._doBlink();
-                this._scheduleBlink();
-            }, delay);
-            this._timers.push(t);
-        }
-
-        _doBlink() {
-            const eyes = this._svg && this._svg.querySelector('#lc-eyes-group');
-            if (!eyes) return;
-            eyes.classList.add('is-blinking');
-            const t = setTimeout(() => eyes.classList.remove('is-blinking'), 150);
-            this._timers.push(t);
-        }
-
-        _scheduleShift() {
-            const delay = 15000 + Math.random() * 15000;
-            const t = setTimeout(() => {
-                this._doShift();
-                this._scheduleShift();
-            }, delay);
-            this._timers.push(t);
-        }
-
-        _doShift() {
-            if (this._state !== 'idle') return;
-            const root = this._svg && this._svg.querySelector('#lc-root');
-            if (!root) return;
-            const dir = Math.random() < 0.5 ? 'shift-left' : 'shift-right';
-            root.classList.remove('shift-left', 'shift-right');
-            void root.offsetWidth; // force reflow to restart animation
-            root.classList.add(dir);
-            const t = setTimeout(() => root.classList.remove(dir), 1400);
-            this._timers.push(t);
-        }
-
-        _clearShiftClasses() {
-            const root = this._svg && this._svg.querySelector('#lc-root');
-            if (root) root.classList.remove('shift-left', 'shift-right');
-        }
-
-        // ── Talking mouth ───────────────────────────────────────
-
-        _startTalk() {
-            if (this._talkInt) return;
-            const mouth = this._svg && this._svg.querySelector('#lc-mouth');
-            if (!mouth) return;
-            let open = false;
-            this._talkInt = setInterval(() => {
-                if (this._state !== 'talking') { this._stopTalk(); return; }
-                open = !open;
-                mouth.setAttribute('d', open
-                    ? 'M53,64 Q60,71 67,64'
-                    : 'M53,62 Q60,66 67,62');
-            }, 140);
-        }
-
-        _stopTalk() {
-            if (this._talkInt) {
-                clearInterval(this._talkInt);
-                this._talkInt = null;
-            }
-            // Reset mouth to closed
-            const mouth = this._svg && this._svg.querySelector('#lc-mouth');
-            if (mouth) mouth.setAttribute('d', 'M53,62 Q60,66 67,62');
-        }
+class LainCharacter {
+    constructor(containerEl) {
+        this._el        = containerEl;
+        this._state     = 'idle';
+        this._frame     = 0;
+        this._raf       = null;
+        this._lastTs    = 0;
+        this._FPS_MS    = 100;   // 10 FPS = 100 ms per frame
+
+        // Blink state machine
+        this._blink     = false;  // currently mid-blink
+        this._blinkF    = 0;      // frame within blink sequence
+        this._blinkTmr  = null;
+
+        // Pose timer
+        this._poseTmr   = null;
+
+        // Talking
+        this._talking   = false;
+        this._mouthOpen = false;
+        this._talkIv    = null;
+
+        this._canvas    = null;
+        this._ctx       = null;
     }
 
-    global.LainCharacter = LainCharacter;
+    // ── Public API ────────────────────────────────────────────
 
-})(window);
+    init() {
+        this._el.innerHTML = `
+<canvas class="lain-canvas" width="64" height="128"></canvas>
+<div class="lain-nameplate">
+  <div class="center-name">L A I N</div>
+  <div class="center-status" id="hub-lain-status">● PRESENT</div>
+</div>`;
+        this._canvas = this._el.querySelector('.lain-canvas');
+        this._ctx    = this._canvas.getContext('2d');
+        this._ctx.imageSmoothingEnabled = false;
+
+        _injectCSS();
+        this._startLoop();
+        this._scheduleBlink();
+        this._schedulePose();
+    }
+
+    setState(s) {
+        if (this._state === s) return;
+        this._state = s;
+        this._frame = 0;
+    }
+
+    onHoverNav()  { if (this._state !== 'talking') this.setState('curious'); }
+    onLeaveNav()  { if (this._state === 'curious') this.setState('idle'); }
+    onNavigate()  {
+        this.setState('surprised');
+        setTimeout(() => { if (this._state === 'surprised') this.setState('idle'); }, 1200);
+    }
+
+    onTalkStart() {
+        this._talking   = true;
+        this._mouthOpen = false;
+        this.setState('talking');
+        this._stopTalkInterval();
+        this._talkIv = setInterval(() => { this._mouthOpen = !this._mouthOpen; }, 200);
+    }
+
+    onTalkEnd() {
+        this._stopTalkInterval();
+        this._talking = false;
+        this.setState('idle');
+    }
+
+    stop() {
+        if (this._raf)      cancelAnimationFrame(this._raf);
+        if (this._blinkTmr) clearTimeout(this._blinkTmr);
+        if (this._poseTmr)  clearTimeout(this._poseTmr);
+        this._stopTalkInterval();
+        this._raf = null;
+    }
+
+    // ── Animation loop ────────────────────────────────────────
+
+    _startLoop() {
+        const tick = (ts) => {
+            this._raf = requestAnimationFrame(tick);
+            if (ts - this._lastTs < this._FPS_MS) return;
+            this._lastTs = ts;
+            this._frame++;
+            this._drawFrame();
+        };
+        this._raf = requestAnimationFrame(tick);
+    }
+
+    _drawFrame() {
+        const p = this._computeParams();
+        _drawLain(this._ctx, p);
+    }
+
+    // ── Parameter computation ─────────────────────────────────
+
+    _computeParams() {
+        const f = this._frame;
+
+        // Breathing — slow sine over 80 frames at 10FPS = 8s cycle
+        const breathY = Math.sin((f % 80) / 80 * Math.PI * 2) * 1.2;
+
+        // Blink eye-state
+        let eyeState = 'open';
+        if (this._blink) {
+            const seq = ['open', 'half', 'closed', 'half', 'open'];
+            eyeState = seq[Math.min(this._blinkF, seq.length - 1)];
+        }
+
+        // Mouth
+        const mouthState = (this._talking && this._mouthOpen) ? 'open' : 'neutral';
+
+        switch (this._state) {
+            case 'idle':
+                return { bodyY: breathY, headAngle: 0, eyeState, eyeShiftX: 0, mouthState, rightArmUp: false };
+            case 'thinking':
+                return { bodyY: 0, headAngle: 5, eyeState, eyeShiftX: 0, mouthState, rightArmUp: true };
+            case 'curious':
+                return { bodyY: 0, headAngle: -6, eyeState, eyeShiftX: 2, mouthState, rightArmUp: false };
+            case 'talking':
+                return { bodyY: breathY * 0.5, headAngle: 0, eyeState, eyeShiftX: 0, mouthState, rightArmUp: false };
+            case 'surprised':
+                return { bodyY: -2, headAngle: 0, eyeState: this._blink ? eyeState : 'wide', eyeShiftX: 0, mouthState: 'open', rightArmUp: false };
+        }
+        return { bodyY: breathY, headAngle: 0, eyeState, eyeShiftX: 0, mouthState, rightArmUp: false };
+    }
+
+    // ── Blink scheduler ───────────────────────────────────────
+
+    _scheduleBlink() {
+        this._blinkTmr = setTimeout(() => {
+            if (!this._raf) return; // stopped
+            this._blink  = true;
+            this._blinkF = 0;
+            const advance = () => {
+                this._blinkF++;
+                if (this._blinkF >= 5) {
+                    this._blink  = false;
+                    this._blinkF = 0;
+                } else {
+                    setTimeout(advance, 60);
+                }
+            };
+            setTimeout(advance, 60);
+            this._scheduleBlink();
+        }, 2500 + Math.random() * 4500);
+    }
+
+    // ── Pose scheduler ────────────────────────────────────────
+
+    _schedulePose() {
+        this._poseTmr = setTimeout(() => {
+            if (!this._raf) return;
+            const pose = Math.random() > 0.5 ? 'thinking' : 'curious';
+            this.setState(pose);
+            setTimeout(() => {
+                if (this._state === pose) this.setState('idle');
+                this._schedulePose();
+            }, 2200 + Math.random() * 2500);
+        }, 10000 + Math.random() * 15000);
+    }
+
+    _stopTalkInterval() {
+        if (this._talkIv) { clearInterval(this._talkIv); this._talkIv = null; }
+        this._mouthOpen = false;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PIXEL ART DRAWING — pure Canvas 2D, no SVG, no CSS animation
+   Native canvas: 64 × 128 px  (displayed at 3× = 192 × 384)
+   PSX colour palette: skin, hair, navy uniform, red ribbon, pixel eyes
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Colour constants
+const C = {
+    skin:       '#fce4d4',
+    skinSh:     '#d9b89a',
+    skinDk:     '#c09878',
+    hair:       '#5C3A20',
+    hairHL:     '#7a4e2a',
+    hairDk:     '#3d2510',
+    uniform:    '#2a2a48',
+    uniformHL:  '#383860',
+    uniformSh:  '#1e1e38',
+    skirt:      '#222240',
+    skirtSh:    '#181830',
+    shirt:      '#c8c8e0',
+    ribbon:     '#cc3344',
+    ribbonDk:   '#992233',
+    sock:       '#e4e4f0',
+    shoe:       '#1a100a',
+    shoeSh:     '#0a0806',
+    eyeW:       '#f6f6ff',
+    iris:       '#3a5488',
+    irisHL:     '#5572aa',
+    pupil:      '#141825',
+    eyeHL:      '#ffffff',
+    blush:      '#e89090',
+    shadow:     'rgba(0,0,10,0.18)',
+};
+
+// Helper: filled rectangle shorthand
+function R(ctx, x, y, w, h, col) {
+    ctx.fillStyle = col;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+}
+
+// Helper: filled ellipse shorthand
+function E(ctx, x, y, rx, ry, col, alpha) {
+    ctx.save();
+    if (alpha !== undefined) ctx.globalAlpha = alpha;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.ellipse(Math.round(x), Math.round(y), rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function _drawLain(ctx, p) {
+    const W = 64, H = 128;
+    ctx.clearRect(0, 0, W, H);
+
+    const by = p.bodyY || 0; // breathing offset
+
+    // ── GROUND SHADOW ──
+    E(ctx, 32, 126, 14, 3, C.shadow);
+
+    // ── LEGS ──
+    // Left leg (skin + sock)
+    R(ctx, 21, 100 + by, 8, 12, C.skin);
+    R(ctx, 21, 112 + by, 8,  8, C.sock);
+    // Right leg
+    R(ctx, 35, 100 + by, 8, 12, C.skin);
+    R(ctx, 35, 112 + by, 8,  8, C.sock);
+
+    // ── SHOES ──
+    R(ctx, 18, 119 + by, 12,  5, C.shoe);   // left
+    R(ctx, 34, 119 + by, 12,  5, C.shoe);   // right
+    R(ctx, 18, 123 + by, 14,  2, C.shoeSh);
+    R(ctx, 34, 123 + by, 14,  2, C.shoeSh);
+
+    // ── SKIRT ──
+    // Trapezoid — wider at hem
+    R(ctx, 19, 78 + by, 26,  4, C.skirt);   // waist band (full width)
+    R(ctx, 18, 82 + by, 28,  4, C.skirt);   // upper hem
+    R(ctx, 17, 86 + by, 30,  4, C.skirt);   // mid
+    R(ctx, 16, 90 + by, 32,  4, C.skirt);   // lower mid
+    R(ctx, 15, 94 + by, 34,  4, C.skirt);   // near hem
+    R(ctx, 14, 98 + by, 36,  4, C.skirtSh); // hem
+    // Pleat lines
+    ctx.fillStyle = C.skirtSh;
+    for (let xi = 0; xi < 4; xi++) {
+        const px = 21 + xi * 7;
+        ctx.fillRect(px, 80 + by, 1, 18);
+    }
+
+    // ── TORSO / BLAZER ──
+    // Main torso block (tapered from shoulders to waist)
+    R(ctx, 22, 46 + by, 20,  4, C.uniformHL);  // shoulder top
+    R(ctx, 21, 50 + by, 22,  4, C.uniform);
+    R(ctx, 21, 54 + by, 22,  4, C.uniform);
+    R(ctx, 20, 58 + by, 24,  4, C.uniform);
+    R(ctx, 20, 62 + by, 24,  4, C.uniform);
+    R(ctx, 19, 66 + by, 26,  4, C.uniformSh);
+    R(ctx, 19, 70 + by, 26,  4, C.uniformSh);
+    R(ctx, 19, 74 + by, 26,  4, C.uniformSh);
+    // Side edge highlights
+    R(ctx, 22, 50 + by,  2, 24, C.uniformHL);  // left lapel edge
+    R(ctx, 40, 50 + by,  2, 24, C.uniformHL);  // right lapel edge
+
+    // ── WHITE SHIRT / COLLAR ──
+    // V-neck collar visible between lapels
+    R(ctx, 29, 48 + by,  6,  2, C.shirt);   // collar top
+    R(ctx, 30, 50 + by,  4,  3, C.shirt);
+    R(ctx, 30, 53 + by,  4,  3, C.shirt);
+    R(ctx, 31, 56 + by,  2,  4, C.shirt);   // V-neck point
+
+    // ── RED RIBBON / TIE ──
+    R(ctx, 30, 49 + by,  4,  2, C.ribbon);
+    R(ctx, 30, 51 + by,  4,  3, C.ribbonDk);
+    R(ctx, 30, 54 + by,  4,  3, C.ribbon);
+    R(ctx, 31, 57 + by,  2,  4, C.ribbonDk);
+
+    // ── ARMS ──
+    if (p.rightArmUp) {
+        // Right arm raised (thinking — hand toward chin)
+        // Upper arm tilted up-left from shoulder
+        R(ctx, 38, 46 + by,  6,  3, C.uniform);   // shoulder
+        R(ctx, 36, 44 + by,  6,  3, C.uniform);   // upper arm
+        R(ctx, 34, 42 + by,  6,  3, C.uniform);   // forearm
+        R(ctx, 32, 40 + by,  6,  2, C.uniform);   // near chin
+        // Hand at chin level
+        E(ctx, 35, 40 + by, 3, 4, C.skin);
+    } else {
+        // Right arm hanging
+        R(ctx, 40, 50 + by,  6,  4, C.uniform);   // upper arm
+        R(ctx, 41, 54 + by,  6,  4, C.uniform);
+        R(ctx, 42, 58 + by,  5,  4, C.uniform);
+        R(ctx, 42, 62 + by,  5,  4, C.uniformSh);
+        R(ctx, 43, 66 + by,  5,  4, C.uniformSh);
+        // Right hand
+        E(ctx, 45, 72 + by, 4, 5, C.skin);
+    }
+
+    // Left arm (always hanging)
+    R(ctx, 18, 50 + by,  6,  4, C.uniform);
+    R(ctx, 17, 54 + by,  6,  4, C.uniform);
+    R(ctx, 16, 58 + by,  5,  4, C.uniform);
+    R(ctx, 16, 62 + by,  5,  4, C.uniformSh);
+    R(ctx, 15, 66 + by,  5,  4, C.uniformSh);
+    // Left hand
+    E(ctx, 18, 72 + by, 4, 5, C.skin);
+
+    // ── NECK ──
+    R(ctx, 28, 38 + by,  8,  8, C.skin);
+    // Neck shadow
+    R(ctx, 28, 44 + by,  8,  2, C.skinSh);
+
+    // ── HEAD (with optional angle) ──
+    ctx.save();
+    // Head pivots at base-of-neck (32, 38+by)
+    ctx.translate(32, 38 + by);
+    if (p.headAngle) ctx.rotate(p.headAngle * Math.PI / 180);
+    ctx.translate(-32, -(38 + by));
+
+    const hy = by; // head y tracks body for breathing
+
+    // Hair (back blob — drawn before face)
+    E(ctx, 32, 18 + hy, 16, 18, C.hairDk);
+    E(ctx, 32, 17 + hy, 15, 17, C.hair);
+    // Hair volume highlight
+    E(ctx, 28, 14 + hy, 6, 5, C.hairHL, 0.5);
+
+    // Face oval
+    E(ctx, 32, 22 + hy, 12, 15, C.skin);
+    // Face right-side shadow
+    E(ctx, 38, 23 + hy,  6, 12, C.skinSh, 0.25);
+
+    // ── BANGS ──
+    // Main bang bar across forehead
+    R(ctx, 19,  4 + hy, 26,  6, C.hair);
+    R(ctx, 20, 10 + hy, 24,  4, C.hair);
+    R(ctx, 21, 14 + hy, 22,  3, C.hair);
+    // Left side-bang hanging down
+    R(ctx, 19, 14 + hy,  4, 10, C.hair);
+    R(ctx, 20, 24 + hy,  3,  4, C.hair);
+    // Right side-bang
+    R(ctx, 41, 14 + hy,  4, 10, C.hair);
+    R(ctx, 41, 24 + hy,  3,  4, C.hair);
+    // Bang fringe details — individual pixel strands
+    R(ctx, 22, 17 + hy,  3,  2, C.hair);
+    R(ctx, 26, 18 + hy,  2,  1, C.hair);
+    R(ctx, 38, 17 + hy,  4,  2, C.hair);
+    R(ctx, 36, 18 + hy,  2,  1, C.hair);
+    // Hair highlight on top
+    R(ctx, 26,  6 + hy,  8,  2, C.hairHL);
+
+    // ── EYEBROWS ──
+    R(ctx, 22, 16 + hy,  8,  1, C.hairDk);  // left brow
+    R(ctx, 34, 16 + hy,  8,  1, C.hairDk);  // right brow
+    // Brow inner arch (1px lighter)
+    R(ctx, 23, 15 + hy,  6,  1, C.hair);
+    R(ctx, 35, 15 + hy,  6,  1, C.hair);
+
+    // ── EYES ──
+    const esx = p.eyeShiftX || 0;
+    _drawEye(ctx, 22, 20 + hy, esx, p.eyeState); // left
+    _drawEye(ctx, 34, 20 + hy, esx, p.eyeState); // right
+
+    // ── NOSE ──
+    R(ctx, 31, 29 + hy,  2,  1, C.skinDk);
+
+    // ── MOUTH ──
+    switch (p.mouthState) {
+        case 'open':
+            R(ctx, 28, 33 + hy,  8,  1, C.skinDk);  // upper lip
+            R(ctx, 28, 34 + hy,  8,  3, '#7a2828');  // cavity
+            R(ctx, 28, 37 + hy,  8,  1, '#c87878');  // lower lip
+            break;
+        default:
+            // Neutral small line
+            R(ctx, 28, 34 + hy,  8,  1, '#b87878');
+            R(ctx, 27, 35 + hy,  2,  1, '#b87878');  // corner left
+            R(ctx, 35, 35 + hy,  2,  1, '#b87878');  // corner right
+    }
+
+    // ── BLUSH ──
+    E(ctx, 22, 30 + hy, 4, 3, C.blush, 0.15);
+    E(ctx, 42, 30 + hy, 4, 3, C.blush, 0.15);
+
+    // ── EAR HINTS ──
+    R(ctx, 19, 22 + hy,  2,  4, C.skin);
+    R(ctx, 43, 22 + hy,  2,  4, C.skin);
+
+    ctx.restore();
+
+    // ── AMBIENT GLOW (bottom) ──
+    E(ctx, 32, 120, 18, 8, 'rgba(0,212,170,0.06)');
+}
+
+/* Draw one eye at top-left corner (ex, ey), 10×7 pixel budget */
+function _drawEye(ctx, ex, ey, shiftX, eyeState) {
+    const sx = Math.round(shiftX) || 0;
+
+    switch (eyeState) {
+        case 'closed':
+            // Single dark line
+            R(ctx, ex, ey + 3,  10,  1, C.hairDk);
+            R(ctx, ex, ey + 2,  10,  1, C.hair);
+            return;
+
+        case 'half':
+            // Half-closed — white slit + iris sliver
+            R(ctx, ex,      ey + 2, 10,  5, C.eyeW);
+            R(ctx, ex + sx, ey + 3,  8,  3, C.iris);
+            R(ctx, ex + 2 + sx, ey + 3, 4, 3, C.pupil);
+            R(ctx, ex,      ey,     10,  3, C.hair);   // upper lid
+            R(ctx, ex,      ey + 6, 10,  1, C.hair);   // lower lash
+            return;
+
+        case 'wide':
+            // Surprised — taller whites, iris shifted up slightly
+            R(ctx, ex,         ey,     10,  8, C.eyeW);
+            R(ctx, ex + 1 + sx, ey,     8,  8, C.iris);
+            R(ctx, ex + 2 + sx, ey + 1, 5,  6, C.pupil);
+            R(ctx, ex + 1 + sx, ey,     3,  2, C.eyeHL);  // big highlight
+            R(ctx, ex,         ey - 1, 10,  2, C.hairDk); // thick upper lid
+            return;
+
+        default:
+            // Normal open eye: white → iris → pupil → highlight
+            R(ctx, ex,         ey,     10,  7, C.eyeW);
+            R(ctx, ex + 1 + sx, ey + 1, 8,  6, C.iris);
+            R(ctx, ex + 2 + sx, ey + 2, 5,  5, C.irisHL);
+            R(ctx, ex + 3 + sx, ey + 2, 4,  5, C.iris);
+            R(ctx, ex + 2 + sx, ey + 2, 4,  4, C.pupil);
+            R(ctx, ex + 1 + sx, ey + 1, 2,  2, C.eyeHL);  // catch-light
+            R(ctx, ex + 6 + sx, ey + 4, 2,  2, C.eyeHL);  // lower highlight
+            R(ctx, ex,         ey - 1, 10,  2, C.hairDk); // upper lid
+            R(ctx, ex,         ey + 6, 10,  1, C.hair);   // lower lash
+            return;
+    }
+}
+
+/* ── CSS injection ──────────────────────────────────────────────────────── */
+function _injectCSS() {
+    if (document.getElementById('lain-canvas-css')) return;
+    const style = document.createElement('style');
+    style.id = 'lain-canvas-css';
+    style.textContent = `
+/* Canvas pixel sprite — disable smoothing, scale 3× */
+.lain-canvas {
+    width: 192px;
+    height: 384px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+}
+
+/* Container layout */
+.lain-char-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Nameplate */
+.lain-nameplate { text-align: center; margin-top: 4px; }
+.center-name {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1rem;
+    letter-spacing: 6px;
+    color: #e0e0e0;
+    text-shadow: 0 0 12px rgba(0,212,170,0.5);
+}
+.center-status {
+    font-size: 0.7rem;
+    color: #00d4aa;
+    margin-top: 2px;
+    letter-spacing: 2px;
+}
+`;
+    document.head.appendChild(style);
+}
+
+window.LainCharacter = LainCharacter;
