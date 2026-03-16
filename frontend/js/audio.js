@@ -219,6 +219,39 @@ class IwakuraAudio {
         osc.stop(now + 0.4);
     }
 
+    // ── playNewMessage — 2-tone ascending beep, ≤200 ms ───────────────────────
+    // Distinct from playBeep (single tone): tone 1 at 1000 Hz then tone 2 at
+    // 1500 Hz, 80 ms each, triggered only when user is away from DIARY screen.
+    playNewMessage() {
+        if (!this.ctx || this.muted) return;
+        const now = this.ctx.currentTime;
+
+        // Tone 1 — 1000 Hz sine, 80 ms
+        const osc1 = this.ctx.createOscillator();
+        osc1.type = 'sine';
+        osc1.frequency.value = 1000;
+        const g1 = this.ctx.createGain();
+        g1.gain.setValueAtTime(0.10, now);
+        g1.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc1.connect(g1);
+        g1.connect(this.masterGain);
+        osc1.start(now);
+        osc1.stop(now + 0.09);
+
+        // Tone 2 — 1500 Hz sine, 80 ms (ascending, starts at 80 ms offset)
+        const osc2 = this.ctx.createOscillator();
+        osc2.type = 'sine';
+        osc2.frequency.value = 1500;
+        const g2 = this.ctx.createGain();
+        g2.gain.setValueAtTime(0, now);
+        g2.gain.setValueAtTime(0.10, now + 0.08);
+        g2.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+        osc2.connect(g2);
+        g2.connect(this.masterGain);
+        osc2.start(now);
+        osc2.stop(now + 0.18);
+    }
+
     playBoot() {
         if (!this.ctx || this.muted) return;
         const now = this.ctx.currentTime;

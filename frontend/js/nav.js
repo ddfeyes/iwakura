@@ -416,9 +416,20 @@ class OrbitalNav {
             const div = document.createElement('div');
             div.className    = 'nav-label-item' + (sel ? ' selected' : '');
             div.dataset.target = item.id;
+
+            // For DIARY: inject unread badge from global set by chat.js
+            let labelHtml = item.label;
+            if (item.id === 'diary') {
+                const cnt = (typeof window._diaryUnreadCount === 'number' && window._diaryUnreadCount > 0)
+                    ? window._diaryUnreadCount : 0;
+                labelHtml += cnt > 0
+                    ? `<span id="diary-unread-badge" class="unread-badge">${cnt}</span>`
+                    : `<span id="diary-unread-badge" class="unread-badge" style="display:none"></span>`;
+            }
+
             div.innerHTML    = `
                 <span class="nav-label-code" style="color:${sel ? '#ff8c00' : '#666'}">${item.code}0${i + 1}0</span>
-                <span class="nav-label-name">${item.label}</span>
+                <span class="nav-label-name">${labelHtml}</span>
             `;
             div.style.cssText = `
                 position:absolute;

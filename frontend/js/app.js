@@ -457,6 +457,8 @@
         getPsyche: () => psyche,
         currentScreen: () => currentScreen,
         clearDiaryUnread: () => { if (chat) chat.clearUnread(); },
+        markDiaryRead:    () => { if (chat) chat.clearUnread(); },
+        getDiaryUnread:   () => window._diaryUnreadCount || 0,
         setDiaryActive: (v) => { if (chat) chat.setActive(v); },
     };
 })();
