@@ -6,7 +6,7 @@ import pathlib
 import random
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import yaml
 import markdown as md_lib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -27,6 +27,73 @@ STATE_FILE = LAIN_BASE / "STATE.yaml"
 DIARY_HISTORY_FILE = pathlib.Path(__file__).parent / "diary_history.json"
 
 app = FastAPI(title="Iwakura Platform", docs_url=None, redoc_url=None)
+
+# ── Levels API data ───────────────────────────────────────────────────────────
+
+LEVELS = [
+    {
+        "level": 0,
+        "project": "HUB",
+        "lain_id": None,
+        "topic_id": None,
+        "summary": "overview",
+    },
+    {
+        "level": 1,
+        "project": "svc-dash",
+        "lain_id": "Lain001",
+        "topic_id": 886,
+        "summary": "crypto dashboard",
+    },
+    {
+        "level": 2,
+        "project": "iwakura",
+        "lain_id": "Lain002",
+        "topic_id": 829,
+        "summary": "this platform",
+    },
+    {
+        "level": 3,
+        "project": "liqmir",
+        "lain_id": "Lain003",
+        "topic_id": None,
+        "summary": "market maker",
+    },
+]
+
+LEVEL_INDEX = {item["level"]: item for item in LEVELS}
+NODE_BLUEPRINT = [
+    ("Dia", "Diary / Chat", 0, 1),
+    ("Tsk", "Tasks", 0, 3),
+    ("Sts", "Status", 1, 2),
+    ("Dc", "Docs", 2, 1),
+    ("Env", "Env / Config", 2, 3),
+]
+LEVEL_CHAT_HISTORY = {item["level"]: [] for item in LEVELS}
+
+
+def build_level_nodes(level_id: int) -> list[dict]:
+    nodes: list[dict] = []
+    for idx, (node_type, title, row, col) in enumerate(NODE_BLUEPRINT, start=1):
+        node_name = f"{node_type}{idx:03d}"
+        nodes.append({
+            "id": f"L{level_id}-{node_name}",
+            "name": node_name,
+            "title": title,
+            "type": node_type,
+            "position": {"row": row, "col": col},
+            "level": level_id,
+            "row": row,
+            "col": col,
+        })
+    return nodes
+
+
+def get_level_or_404(level_id: int) -> dict:
+    level = LEVEL_INDEX.get(level_id)
+    if not level:
+        raise HTTPException(404, "Level not found")
+    return level
 
 # ── Diary history ─────────────────────────────────────────────────────────────
 
@@ -150,6 +217,54 @@ async def ws_chat(websocket: WebSocket):
 
 
 # ── REST API ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/levels")
+async def api_levels():
+    levels_out = []
+    for item in LEVELS:
+        levels_out.append({
+            **item,
+            "rows": 3,
+            "max_cols": 8,
+            "nodes": build_level_nodes(item["level"]),
+        })
+    return JSONResponse({"levels": levels_out})
+
+
+@app.get("/api/level/{level_id}/chat")
+async def api_level_chat_history(level_id: int):
+    get_level_or_404(level_id)
+    return JSONResponse({"level": level_id, "messages": LEVEL_CHAT_HISTORY[level_id]})
+
+
+@app.post("/api/level/{level_id}/chat")
+async def api_level_chat_send(level_id: int, payload: dict):
+    level = get_level_or_404(level_id)
+    message = str(payload.get("message", "")).strip()
+    if not message:
+        raise HTTPException(400, "Message is required")
+
+    ts = datetime.now(timezone.utc).isoformat()
+    user_entry = {"role": "user", "text": message, "timestamp": ts}
+    reply_text = f"[mock:{level['project']}] Received: {message[:120]}"
+    lain_entry = {
+        "role": "lain",
+        "text": reply_text,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    history = LEVEL_CHAT_HISTORY[level_id]
+    history.extend([user_entry, lain_entry])
+    if len(history) > 200:
+        LEVEL_CHAT_HISTORY[level_id] = history[-200:]
+
+    return JSONResponse({
+        "level": level_id,
+        "project": level["project"],
+        "reply": lain_entry,
+        "messages": [user_entry, lain_entry],
+    })
+
 
 @app.get("/api/diary/history")
 async def api_diary_history():
