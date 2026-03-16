@@ -42,6 +42,9 @@ class OrbitalNav {
         this._boundKeyDown = (e) => this._onKeyDown(e);
     }
 
+    init() { this.start(); }
+    resume() { if (!this.running) this.start(); }
+
     start() {
         if (this.running) return;
         this.running = true;
