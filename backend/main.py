@@ -160,6 +160,12 @@ async def api_status():
     return JSONResponse(data)
 
 
+@app.delete("/api/ao-sessions/idle")
+async def api_kill_idle_sessions():
+    killed = await sys_status.kill_idle_ao_sessions()
+    return JSONResponse({"killed": killed, "count": len(killed)})
+
+
 @app.get("/api/memory")
 async def api_memory_list():
     files = []
