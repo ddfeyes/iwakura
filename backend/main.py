@@ -4,6 +4,7 @@ import logging
 import pathlib
 import random
 import time
+from datetime import datetime, timedelta
 import yaml
 import markdown as md_lib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -17,8 +18,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIR = pathlib.Path(__file__).parent.parent / "frontend"
-LAIN_MEMORY = pathlib.Path.home() / "agents" / "lain" / "memory"
-LAIN_WORKSPACE = pathlib.Path.home() / "agents" / "lain"
+LAIN_BASE = pathlib.Path.home() / "agents" / "lain"
+LAIN_MEMORY = LAIN_BASE / "memory"
+LAIN_WORKSPACE = LAIN_BASE
+STATE_FILE = LAIN_BASE / "STATE.yaml"
 
 app = FastAPI(title="Iwakura Platform", docs_url=None, redoc_url=None)
 
@@ -172,6 +175,73 @@ async def api_memory_file(filename: str):
     return JSONResponse({"name": filename, "content": content, "rendered": rendered})
 
 
+def get_recent_decisions() -> list:
+    """Extract last 8 headings/bullets from today's (or yesterday's) diary file."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    diary = LAIN_MEMORY / f"{today}.md"
+    if not diary.exists():
+        yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+        diary = LAIN_MEMORY / f"{yesterday}.md"
+    if not diary.exists():
+        return []
+    try:
+        text = diary.read_text(errors="replace")
+        entries = []
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("## ") or line.startswith("### "):
+                entries.append(line.lstrip("#").strip())
+            elif line.startswith("- ") and len(line) > 10:
+                entries.append(line[2:].strip()[:100])
+        return entries[-8:]
+    except Exception:
+        return []
+
+
+def get_active_task() -> dict:
+    """Read current task/goal from STATE.yaml."""
+    if not STATE_FILE.exists():
+        return {}
+    try:
+        with open(STATE_FILE) as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            return {}
+        return {
+            "goal": str(data.get("goal", data.get("task", ""))),
+            "status": str(data.get("status", "")),
+            "remaining": data.get("remaining", []),
+        }
+    except Exception:
+        try:
+            text = STATE_FILE.read_text(errors="replace")
+            task: dict = {}
+            for line in text.splitlines():
+                if line.startswith("goal:") or line.startswith("task:"):
+                    task["goal"] = line.split(":", 1)[1].strip().strip('"')
+                elif line.startswith("status:"):
+                    task["status"] = line.split(":", 1)[1].strip().strip('"')
+            return task
+        except Exception:
+            return {}
+
+
+def get_memory_activity() -> dict:
+    """Count memory files and report last-modified info."""
+    try:
+        files = list(LAIN_MEMORY.glob("*.md"))
+        if not files:
+            return {}
+        latest = max(files, key=lambda f: f.stat().st_mtime)
+        return {
+            "file_count": len(files),
+            "latest_file": latest.name,
+            "latest_mtime": datetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+        }
+    except Exception:
+        return {}
+
+
 def _derive_mood(state: dict, initiative: dict, think: dict, think_delta: dict) -> dict:
     signals = []
     score = 0
@@ -268,6 +338,11 @@ async def api_psyche():
         data.get("think", {}),
         data.get("think_delta", {}),
     )
+
+    # enriched context
+    data["recent_decisions"] = get_recent_decisions()
+    data["active_task"] = get_active_task()
+    data["memory_activity"] = get_memory_activity()
 
     return JSONResponse(data)
 

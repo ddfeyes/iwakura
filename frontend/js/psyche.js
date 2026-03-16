@@ -72,6 +72,9 @@
                 soul_excerpt = '',
                 heartbeat = '',
                 mood = null,
+                recent_decisions = [],
+                active_task = {},
+                memory_activity = {},
             } = data;
 
             let html = '';
@@ -256,6 +259,41 @@
                 } else {
                     html += '<div class="screen-loading dim">PSYCHE DATA NOT ACCESSIBLE</div>';
                 }
+            }
+
+            // ── Active Task (from STATE.yaml) ──
+            if (active_task && active_task.goal) {
+                html += `
+                    <div class="psyche-card">
+                        <div class="psyche-card-title">ACTIVE TASK</div>
+                        <div class="psyche-task-goal">${esc(active_task.goal)}</div>
+                        ${active_task.status ? `<div class="psyche-task-status">${esc(active_task.status)}</div>` : ''}
+                    </div>
+                    <div class="psy-rule"></div>
+                `;
+            }
+
+            // ── Recent Decisions (from diary) ──
+            if (recent_decisions && recent_decisions.length > 0) {
+                html += `
+                    <div class="psyche-card">
+                        <div class="psyche-card-title">RECENT LOG</div>
+                        ${recent_decisions.map(d => `<div class="psyche-decision-line">· ${esc(d)}</div>`).join('')}
+                    </div>
+                    <div class="psy-rule"></div>
+                `;
+            }
+
+            // ── Memory Activity ──
+            if (memory_activity && memory_activity.file_count) {
+                html += `
+                    <div class="psyche-card">
+                        <div class="psyche-card-title">MEMORY</div>
+                        <div>${esc(String(memory_activity.file_count))} DIARY FILES · LAST: ${esc(memory_activity.latest_file || '')}</div>
+                        <div class="dim">${esc(memory_activity.latest_mtime || '')}</div>
+                    </div>
+                    <div class="psy-rule"></div>
+                `;
             }
 
             // ── Session ──
