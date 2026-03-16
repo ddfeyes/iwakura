@@ -168,6 +168,40 @@
 <!-- CRT animated scanlines overlay (managed by GlitchEffects) -->
 <div id="crt-overlay" class="crt-overlay"></div>
 
+<!-- ── HOTKEYS HELP OVERLAY ───────────────────────────────── -->
+<button id="hotkeys-btn" class="hotkeys-btn" title="Keyboard shortcuts">[ ? ]</button>
+
+<div id="hotkeys-help" class="hotkeys-overlay hidden">
+    <div class="hotkeys-panel">
+        <div class="hotkeys-header">
+            <span class="orange">KEYBOARD SHORTCUTS</span>
+            <span class="hotkeys-close" id="hotkeys-close">[ × ]</span>
+        </div>
+        <div class="hr-orange"></div>
+        <table class="hotkeys-table">
+            <thead>
+                <tr><th class="cyan" colspan="2">GLOBAL</th></tr>
+            </thead>
+            <tbody>
+                <tr><td class="green">1</td><td>Go to DIARY</td></tr>
+                <tr><td class="green">2</td><td>Go to STATUS</td></tr>
+                <tr><td class="green">3</td><td>Go to MEMORY</td></tr>
+                <tr><td class="green">4</td><td>Go to PSYCHE</td></tr>
+                <tr><td class="green">Esc</td><td>Return to HUB</td></tr>
+                <tr><td class="green">m</td><td>Toggle mute</td></tr>
+                <tr><td class="green">?</td><td>Show / hide this panel</td></tr>
+            </tbody>
+            <thead>
+                <tr><th class="cyan" colspan="2">DIARY (when not in input)</th></tr>
+            </thead>
+            <tbody>
+                <tr><td class="green">/</td><td>Focus message input</td></tr>
+                <tr><td class="green">r</td><td>Scroll to bottom</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="js/data-rain.js"></script>
 <script src="js/audio.js"></script>
@@ -177,6 +211,7 @@
 <script src="js/psyche.js"></script>
 <script src="js/memory.js"></script>
 <script src="js/status.js"></script>
+<script src="js/hotkeys.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
