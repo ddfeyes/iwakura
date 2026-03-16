@@ -159,10 +159,17 @@ body::after {
     min-width: 90px;
     backdrop-filter: blur(2px);
 }
-.nav-label-item:hover {
+.nav-label-item:hover,
+.nav-label-item.hovered {
     background: rgba(255,140,0,0.15);
     border-color: var(--orange);
     box-shadow: 0 0 18px rgba(255,140,0,0.4);
+}
+/* Cyan override when 3D raycaster detects hover */
+.nav-label-item.hovered {
+    background: rgba(0,212,170,0.15) !important;
+    border-color: var(--cyan) !important;
+    box-shadow: 0 0 18px rgba(0,212,170,0.4) !important;
 }
 .nav-label-item[data-target="status"] { border-color: rgba(0,212,170,0.5); }
 .nav-label-item[data-target="status"]:hover {
