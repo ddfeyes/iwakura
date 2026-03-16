@@ -58,15 +58,30 @@ async def ws_chat(websocket: WebSocket):
                 # Send thinking indicator immediately
                 await websocket.send_json({"type": "thinking"})
 
-                result = await gateway.send_message(text)
+                file_code = gen_file_code()
+                timestamp = time.strftime("%H:%M")
+                token_count = 0
 
-                if result and result.get("text"):
+                # Stream tokens to the frontend line by line
+                async for chunk in gateway.stream_message(text):
+                    token_count += 1
+                    if token_count == 1:
+                        # First token carries header info so frontend creates the bubble
+                        await websocket.send_json({
+                            "type": "token",
+                            "text": chunk,
+                            "fileCode": file_code,
+                            "timestamp": timestamp,
+                        })
+                    else:
+                        await websocket.send_json({"type": "token", "text": chunk})
+
+                if token_count > 0:
                     await websocket.send_json({
-                        "type": "response",
-                        "text": result["text"],
-                        "sessionId": result.get("sessionId", ""),
-                        "fileCode": gen_file_code(),
-                        "timestamp": time.strftime("%H:%M"),
+                        "type": "done",
+                        "sessionId": gateway.get_current_session_id() or "",
+                        "fileCode": file_code,
+                        "timestamp": timestamp,
                     })
                 else:
                     await websocket.send_json({
