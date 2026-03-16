@@ -346,6 +346,7 @@ body::after {
     border-left-color: var(--cyan);
     background: rgba(0,25,30,0.6);
     color: var(--cyan-dim); font-size: 22px;
+    white-space: pre-wrap;
 }
 .msg-body.error {
     border-left-color: var(--red);
