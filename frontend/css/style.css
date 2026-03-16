@@ -928,6 +928,74 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
     .screen.exiting      { animation: none; opacity: 0; }
 }
 
+/* ── Tasks Screen ──────────────────────────────────────────── */
+.tasks-grid {
+    flex: 1; overflow-y: auto;
+    padding: 0 20px 20px;
+    display: flex; flex-direction: column;
+    gap: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cyan) var(--bg-deep);
+}
+.tasks-grid::-webkit-scrollbar { width: 5px; }
+.tasks-grid::-webkit-scrollbar-track { background: var(--bg-deep); }
+.tasks-grid::-webkit-scrollbar-thumb { background: var(--cyan); }
+
+.tasks-metrics-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 0;
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+.tasks-met-item { white-space: nowrap; }
+.tasks-met-sep  { color: var(--text-dim); opacity: 0.4; }
+.tasks-met-divider { color: var(--orange); margin: 0 6px; }
+
+.task-card {
+    border: 1px solid rgba(0, 212, 170, 0.18);
+    border-left: 3px solid var(--cyan);
+    background: rgba(0, 212, 170, 0.03);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-family: var(--font-mono); font-size: 12px;
+    flex-shrink: 0;
+}
+.task-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+}
+.task-id { font-size: 10px; }
+.task-status-badge {
+    font-family: var(--font-px); font-size: 7px;
+    letter-spacing: 0.2em;
+    padding: 2px 6px;
+    border: 1px solid currentColor;
+}
+.task-goal {
+    color: var(--text-main); font-size: 13px;
+    line-height: 1.4; margin-bottom: 8px;
+}
+.task-progress-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px; font-size: 11px;
+}
+.task-progress-bar { letter-spacing: 0.05em; }
+.task-progress-pct { font-weight: bold; }
+.task-progress-counts { font-size: 10px; }
+
+.task-section-label {
+    font-family: var(--font-px); font-size: 7px;
+    letter-spacing: 0.3em; margin: 8px 0 4px;
+}
+.task-wave-item,
+.task-done-item,
+.task-remaining-item {
+    font-size: 11px; line-height: 1.5;
+    padding: 1px 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* ── Animations ────────────────────────────────────────────── */
 @keyframes blink {
     0%, 100% { opacity: 1; }

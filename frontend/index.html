@@ -58,6 +58,10 @@
             <div class="nav-label-code">Ira007</div>
             <div class="nav-label-name">PSYCHE</div>
         </div>
+        <div class="nav-label-item" data-target="tasks">
+            <div class="nav-label-code">Tsk099</div>
+            <div class="nav-label-name">TASKS</div>
+        </div>
     </div>
 
     <div class="hub-ui">
@@ -160,6 +164,19 @@
     </div>
 </div>
 
+<!-- ── TASKS SCREEN ───────────────────────────────────── -->
+<div id="screen-tasks" class="screen">
+    <div class="screen-header">
+        <button class="back-btn" data-target="hub">◀ RETURN</button>
+        <span class="screen-title" data-glitch>TASKS // LIVE TASK BOARD</span>
+        <span class="screen-code green">Tsk099</span>
+        <button id="tasks-refresh" class="refresh-btn">↻ REFRESH</button>
+    </div>
+    <div class="tasks-grid" id="tasks-content">
+        <div class="screen-loading cyan">LOADING TASK DATA<span class="loading-dots"></span></div>
+    </div>
+</div>
+
 <!-- ── VOLUME CONTROL ─────────────────────────────────── -->
 <div id="volume-control">
     <span class="vol-icon" id="vol-icon">♪</span>
@@ -189,6 +206,7 @@
                 <tr><td class="green">2</td><td>Go to STATUS</td></tr>
                 <tr><td class="green">3</td><td>Go to MEMORY</td></tr>
                 <tr><td class="green">4</td><td>Go to PSYCHE</td></tr>
+                <tr><td class="green">5</td><td>Go to TASKS</td></tr>
                 <tr><td class="green">Esc</td><td>Return to HUB</td></tr>
                 <tr><td class="green">m</td><td>Toggle mute</td></tr>
                 <tr><td class="green">?</td><td>Show / hide this panel</td></tr>
@@ -213,6 +231,7 @@
 <script src="js/psyche.js"></script>
 <script src="js/memory.js"></script>
 <script src="js/status.js"></script>
+<script src="js/tasks.js"></script>
 <script src="js/hotkeys.js"></script>
 <script src="js/app.js"></script>
 </body>
