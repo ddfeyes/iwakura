@@ -1,26 +1,38 @@
 """System status collector — crons, docker, memory, lain agent state."""
 import asyncio
 import json
+import logging
+import os
 import pathlib
 import platform
+import shutil
 import time
 import yaml
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 LAIN_WORKSPACE = pathlib.Path.home() / "agents" / "lain"
 LAIN_MEMORY = LAIN_WORKSPACE / "memory"
 
+_OPENCLAW = shutil.which("openclaw") or "/usr/local/bin/openclaw"
+
 
 async def _run(cmd: list[str], timeout: int = 5) -> str:
+    env = {**os.environ, "PATH": "/usr/local/bin:/usr/bin:/bin:" + os.environ.get("PATH", "")}
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        if stderr:
+            logger.debug("_run stderr: %s", stderr.decode(errors="replace")[:200])
         return stdout.decode(errors="replace").strip()
-    except Exception:
+    except Exception as e:
+        logger.warning("_run failed for %s: %s", cmd[0], e)
         return ""
 
 
@@ -80,7 +92,7 @@ async def get_ao_sessions() -> list[dict]:
 async def get_openclaw_crons() -> list[dict]:
     """Fetch cron jobs via openclaw CLI (gateway /api/crons returns 404)."""
     # Try openclaw cron list --json first
-    raw = await _run(["openclaw", "cron", "list", "--json"])
+    raw = await _run([_OPENCLAW, "cron", "list", "--json"], timeout=15)
     if raw:
         try:
             data = json.loads(raw)
@@ -98,7 +110,7 @@ async def get_openclaw_crons() -> list[dict]:
             pass
 
     # Fallback: parse text output
-    raw_text = await _run(["openclaw", "cron", "list"])
+    raw_text = await _run([_OPENCLAW, "cron", "list"], timeout=15)
     if raw_text:
         result = []
         for line in raw_text.splitlines():
