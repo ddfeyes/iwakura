@@ -461,11 +461,29 @@
 
     inputEl.addEventListener('input', updateTagPreview);
 
-    resetBtn.addEventListener('click', () => {
-        if (connected) send({ type: 'reset_session' });
+    resetBtn.addEventListener('click', async () => {
+        try {
+            await fetch('/api/session/reset', { method: 'POST' });
+        } catch (_) {}
+        addMsg('sys', 'SESSION RESET — NEW CONNECTION ESTABLISHED');
+        if (sessLabel) sessLabel.textContent = 'SESSION: --';
+        // Reconnect WebSocket
+        if (ws) { ws.onclose = null; ws.close(); }
+        connected = false;
+        stopPing();
+        setStatus(false);
+        reconnectMs = 2000;
+        connect();
     });
 
     // ── Boot ──────────────────────────────────────────────────
+    // Load initial session info
+    fetch('/api/session').then(r => r.json()).then(data => {
+        if (data.sessionId && sessLabel) {
+            sessLabel.textContent = 'SESSION: ' + data.sessionId.slice(0, 8) + '...';
+        }
+    }).catch(() => {});
+
     loadHistory().then(() => connect());
 
 })();

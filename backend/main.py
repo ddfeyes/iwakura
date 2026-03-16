@@ -554,7 +554,16 @@ async def api_search(q: str = ""):
 
 @app.get("/api/session")
 async def api_session():
-    return JSONResponse({"sessionId": gateway.get_current_session_id()})
+    return JSONResponse({
+        "sessionId": gateway.get_current_session_id(),
+        "message_count": len(load_diary_history()),
+    })
+
+
+@app.post("/api/session/reset")
+async def api_session_reset():
+    gateway.reset_session()
+    return JSONResponse({"ok": True})
 
 
 # ── WIRED feed ────────────────────────────────────────────────────────────────
