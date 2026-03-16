@@ -1,11 +1,8 @@
 """System status collector — crons, docker, memory, lain agent state."""
 import asyncio
 import json
-import os
 import pathlib
 import platform
-import subprocess
-import time
 import yaml
 from datetime import datetime
 
