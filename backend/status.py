@@ -54,8 +54,8 @@ async def get_ao_sessions() -> dict:
     """List tmux sessions with iw- prefix and capture their last output.
 
     Returns dict with:
-      - sessions: list of sessions created within last 24h (fully enumerated)
-      - old_count: count of sessions older than 24h (not enumerated)
+      - sessions: list of up to 5 sessions created within last 2h (fully enumerated)
+      - old_count: count of sessions older than 2h (not enumerated)
     """
     raw = await _run([
         "tmux", "list-sessions",
@@ -64,10 +64,10 @@ async def get_ao_sessions() -> dict:
     if not raw:
         return {"sessions": [], "old_count": 0}
 
-    sessions = []
+    candidate_sessions = []
     old_count = 0
     now = int(time.time())
-    THRESHOLD_24H = 86400
+    THRESHOLD_RECENT = 7200  # 2 hours
 
     for line in raw.splitlines():
         parts = line.strip().split("|")
@@ -87,20 +87,38 @@ async def get_ao_sessions() -> dict:
 
         age_seconds = now - created_ts if created_ts else None
 
-        # Sessions older than 24h: count only, don't enumerate
-        if age_seconds is not None and age_seconds > THRESHOLD_24H:
+        # Sessions older than 2h: count only, don't enumerate
+        if age_seconds is not None and age_seconds > THRESHOLD_RECENT:
             old_count += 1
             continue
 
-        status = "active" if (activity_ts and now - activity_ts < 60) else "idle"
-
-        last_line = await _run(["tmux", "capture-pane", "-t", name, "-p"])
-        # get last non-empty line
-        lines = [ln for ln in last_line.splitlines() if ln.strip()]
-        last = lines[-1][:80] if lines else ""
-
-        sessions.append({
+        candidate_sessions.append({
             "name": name,
+            "created_ts": created_ts,
+            "activity_ts": activity_ts,
+            "age_seconds": age_seconds,
+        })
+
+    # Cap at 5 most recent sessions (sort by created_ts descending)
+    candidate_sessions.sort(key=lambda s: s["created_ts"], reverse=True)
+    candidate_sessions = candidate_sessions[:5]
+
+    # Run capture-pane concurrently for all candidate sessions
+    names = [s["name"] for s in candidate_sessions]
+    captures = await asyncio.gather(*[
+        _run(["tmux", "capture-pane", "-t", name, "-p"])
+        for name in names
+    ])
+
+    sessions = []
+    for s, capture in zip(candidate_sessions, captures):
+        age_seconds = s["age_seconds"]
+        activity_ts = s["activity_ts"]
+        status = "active" if (activity_ts and now - activity_ts < 60) else "idle"
+        lines = [ln for ln in capture.splitlines() if ln.strip()]
+        last = lines[-1][:80] if lines else ""
+        sessions.append({
+            "name": s["name"],
             "age_seconds": age_seconds,
             "age_hours": round(age_seconds / 3600, 1) if age_seconds is not None else None,
             "last_line": last,
