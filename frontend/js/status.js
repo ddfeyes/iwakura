@@ -71,8 +71,17 @@ class StatusDashboard {
         }
     }
 
+    _fmtAge(seconds) {
+        if (seconds === null || seconds === undefined) return '?';
+        if (seconds < 60) return '< 1m';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        if (h > 0) return `${h}h ${m}m`;
+        return `${m}m`;
+    }
+
     _render(el, data) {
-        const { crons = [], docker = [], memory = {}, lain = {} } = data;
+        const { crons = [], ao_sessions, openclaw_crons, docker = [], memory = {}, lain = {} } = data;
         let html = '';
 
         // ── System / Memory ──────────────────────────────────────
@@ -122,19 +131,60 @@ class StatusDashboard {
             </div>
         `;
 
-        // ── OpenClaw / Cron Jobs ─────────────────────────────────
-        const cronRows = crons.slice(0, 12).map(c => `
-            <div class="srow">
-                <div class="sdot ${c.active ? 'sdot-g' : 'sdot-d'}"></div>
-                <span class="srow-label">${esc(c.command)}</span>
-                <span class="srow-val">${esc(c.schedule)}</span>
-            </div>
-        `).join('');
+        // ── AO Sessions ──────────────────────────────────────────
+        const aoList = Array.isArray(ao_sessions) ? ao_sessions : [];
+        const aoRows = aoList.slice(0, 10).map(s => {
+            const dot   = s.status === 'active' ? 'sdot-g' : 'sdot-d';
+            const age   = this._fmtAge(s.age_seconds);
+            const last  = (s.last_line || '').slice(0, 60);
+            return `
+                <div class="srow">
+                    <div class="sdot ${dot}"></div>
+                    <span class="srow-label orange">${esc(s.name)}</span>
+                    <span class="srow-val">${esc(age)}&nbsp;&nbsp;${esc(last)}</span>
+                </div>
+            `;
+        }).join('');
 
         html += `
             <div class="status-card">
-                <div class="status-card-title">OPENCLAW CRONS (${crons.length})</div>
-                ${cronRows || '<div class="srow"><span class="srow-label dim">NO CRONS</span></div>'}
+                <div class="status-card-title">AO SESSIONS (${aoList.length})</div>
+                ${aoRows || '<div class="srow"><span class="srow-label dim">● NO ACTIVE SESSIONS</span></div>'}
+            </div>
+        `;
+
+        // ── Cron Jobs (OpenClaw gateway or fallback) ──────────────
+        const ocCrons = Array.isArray(openclaw_crons) ? openclaw_crons : null;
+        let cronRows;
+        if (ocCrons) {
+            cronRows = ocCrons.slice(0, 12).map(c => {
+                const dot    = c.enabled ? 'sdot-b' : 'sdot-d';
+                const badge  = c.enabled ? 'ENABLED' : 'DISABLED';
+                const last   = c.last_run ? esc(c.last_run) : '--';
+                return `
+                    <div class="srow">
+                        <div class="sdot ${dot}"></div>
+                        <span class="srow-label">◉ ${esc(c.name)}</span>
+                        <span class="srow-val">${esc(c.schedule)}&nbsp;[${badge}]&nbsp;${last}</span>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            // Fallback to old crons array
+            cronRows = crons.slice(0, 12).map(c => `
+                <div class="srow">
+                    <div class="sdot ${c.active ? 'sdot-g' : 'sdot-d'}"></div>
+                    <span class="srow-label">${esc(c.command)}</span>
+                    <span class="srow-val">${esc(c.schedule)}</span>
+                </div>
+            `).join('');
+        }
+
+        const cronCount = ocCrons ? ocCrons.length : crons.length;
+        html += `
+            <div class="status-card">
+                <div class="status-card-title">CRON JOBS (${cronCount})</div>
+                ${cronRows || '<div class="srow"><span class="srow-label dim">◉ NO CRON DATA</span></div>'}
             </div>
         `;
 
