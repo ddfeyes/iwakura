@@ -17,8 +17,10 @@
   .tag.frontend { background: #3a1a3a; color: #cc88ff; }
   .tag.infra { background: #3a2a1a; color: #ff8c00; }
   .tag.audio { background: #1a2a3a; color: #40e0d0; }
+  .tag.fix { background: #3a1a1a; color: #ff4444; }
   .priority { color: #ff4444; font-size: 0.7em; }
   .done .card { opacity: 0.5; border-color: #00ff88; }
+  .count { font-size: 0.7em; color: #666; margin-left: 8px; }
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -28,34 +30,60 @@
 <div class="board">
 
 <div class="column">
-  <h2>📋 Backlog</h2>
-  <div class="card">Docker compose setup<span class="tag infra">infra</span></div>
-  <div class="card">LaunchAgent for auto-start<span class="tag infra">infra</span></div>
+  <h2>📋 Backlog <span class="count">(3)</span></h2>
   <div class="card">Voice clips (Kokoro TTS)<span class="tag audio">audio</span></div>
   <div class="card">Cloudflare tunnel<span class="tag infra">infra</span></div>
   <div class="card">Mobile responsive layout<span class="tag frontend">frontend</span></div>
 </div>
 
 <div class="column">
-  <h2>🔨 In Progress</h2>
-  <div class="card"><span class="priority">P0</span> FastAPI backend + WebSocket<span class="tag backend">backend</span></div>
-  <div class="card"><span class="priority">P0</span> Frontend: Boot screen + Main hub<span class="tag frontend">frontend</span></div>
-  <div class="card"><span class="priority">P0</span> Frontend: Diary/Chat screen<span class="tag frontend">frontend</span></div>
-  <div class="card"><span class="priority">P0</span> PSX CSS (scanlines, CRT, palette)<span class="tag frontend">frontend</span></div>
-  <div class="card"><span class="priority">P1</span> Three.js orbital navigation<span class="tag frontend">frontend</span></div>
+  <h2>🔨 In Progress <span class="count">(2)</span></h2>
+  <div class="card">#66 DIARY — unread badge + notification sound<span class="tag frontend">frontend</span></div>
+  <div class="card">#65 STATUS — health score + alert badges on hub nav<span class="tag frontend">frontend</span></div>
 </div>
 
 <div class="column">
-  <h2>🔍 Review</h2>
+  <h2>🔍 Review <span class="count">(0)</span></h2>
 </div>
 
 <div class="column done">
-  <h2>✅ Done</h2>
-  <div class="card">SPEC.md written<span class="tag infra">infra</span></div>
-  <div class="card">GitHub repo created<span class="tag infra">infra</span></div>
-  <div class="card">AO config<span class="tag infra">infra</span></div>
-  <div class="card">CI/CD pipeline<span class="tag infra">infra</span></div>
-  <div class="card">Kanban board<span class="tag infra">infra</span></div>
+  <h2>✅ Done <span class="count">(34)</span></h2>
+  <div class="card">#64 DIARY — /api/session endpoint + session info panel<span class="tag backend">backend</span></div>
+  <div class="card">#63 PSX 3D overhaul — Lain silhouette, gyroscope rings<span class="tag frontend">frontend</span></div>
+  <div class="card">#61 fix: /api/status hanging tmux capture-pane<span class="tag fix">fix</span></div>
+  <div class="card">#58 WIRED screen — live activity stream<span class="tag frontend">frontend</span></div>
+  <div class="card">#56 SEARCH screen — global search<span class="tag frontend">frontend</span></div>
+  <div class="card">#54 STATUS: kill idle AO sessions<span class="tag frontend">frontend</span></div>
+  <div class="card">#52 TASKS screen — live task board<span class="tag frontend">frontend</span></div>
+  <div class="card">#50 STATUS: fix crons PATH<span class="tag fix">fix</span></div>
+  <div class="card">#46 PSYCHE: decisions + tasks from STATE.yaml<span class="tag frontend">frontend</span></div>
+  <div class="card">#45 DIARY: message persistence + session restore<span class="tag frontend">frontend</span></div>
+  <div class="card">#44 STATUS: fix crons — gateway endpoint<span class="tag fix">fix</span></div>
+  <div class="card">#42 STATUS — AO sessions + cron jobs<span class="tag frontend">frontend</span></div>
+  <div class="card">#40 MEMORY: inline search + keyword tags<span class="tag frontend">frontend</span></div>
+  <div class="card">#38 Diary auto-scroll + unread badge<span class="tag frontend">frontend</span></div>
+  <div class="card">#36 PSYCHE mood indicator<span class="tag frontend">frontend</span></div>
+  <div class="card">#34 Keyboard shortcuts — vim navigation<span class="tag frontend">frontend</span></div>
+  <div class="card">#32 Diary message persistence (localStorage)<span class="tag frontend">frontend</span></div>
+  <div class="card">#27 STATUS screen — live system dashboard<span class="tag frontend">frontend</span></div>
+  <div class="card">#26 Glitch effects — CRT, scanlines, flicker<span class="tag frontend">frontend</span></div>
+  <div class="card">#25 Ambient audio — drone hum + UI sounds<span class="tag audio">audio</span></div>
+  <div class="card">#24 Three.js orbital hub navigation<span class="tag frontend">frontend</span></div>
+  <div class="card">#20 Memory browser<span class="tag frontend">frontend</span></div>
+  <div class="card">#19 Psyche screen — live state visualizer<span class="tag frontend">frontend</span></div>
+  <div class="card">#18 Streaming responses<span class="tag frontend">frontend</span></div>
+  <div class="card">#15 Real OpenClaw chat integration<span class="tag backend">backend</span></div>
+  <div class="card">#14 LaunchAgent — auto-start<span class="tag infra">infra</span></div>
+  <div class="card">#13 fix: start.sh python3<span class="tag fix">fix</span></div>
+  <div class="card">#9 Ambient audio + UI sounds<span class="tag audio">audio</span></div>
+  <div class="card">#8 PSX CSS system<span class="tag frontend">frontend</span></div>
+  <div class="card">#7 Psyche screen<span class="tag frontend">frontend</span></div>
+  <div class="card">#6 Memory browser screen<span class="tag frontend">frontend</span></div>
+  <div class="card">#5 Status dashboard screen<span class="tag frontend">frontend</span></div>
+  <div class="card">#4 Diary/Chat with typewriter<span class="tag frontend">frontend</span></div>
+  <div class="card">#3 Main hub with orbital nav<span class="tag frontend">frontend</span></div>
+  <div class="card">#2 PSX boot screen + authorize<span class="tag frontend">frontend</span></div>
+  <div class="card">#1 FastAPI backend + WebSocket<span class="tag backend">backend</span></div>
 </div>
 
 </div>
