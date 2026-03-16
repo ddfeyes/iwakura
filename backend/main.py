@@ -481,6 +481,75 @@ async def api_tasks():
     return JSONResponse({"tasks": tasks_out, "metrics": metrics_out})
 
 
+@app.get("/api/search")
+async def api_search(q: str = ""):
+    if not q or len(q) < 2:
+        return JSONResponse({"results": [], "total": 0, "query": q})
+    query = q.lower()
+    results = []
+
+    # DIARY results first
+    diary = load_diary_history()
+    last_msg = diary[-1].get("text", "") if diary else ""
+    diary_results = []
+    for entry in diary:
+        text = entry.get("text", "")
+        idx = text.lower().find(query)
+        if idx == -1:
+            continue
+        start = max(0, idx - 40)
+        end = min(len(text), idx + len(query) + 40)
+        snippet = text[start:end].replace('\n', ' ').strip()
+        diary_results.append({
+            "source": "DIARY",
+            "file": entry.get("code", ""),
+            "snippet": snippet,
+            "timestamp": entry.get("timestamp", ""),
+            "match_start": idx - start,
+            "match_end": idx - start + len(query),
+        })
+
+    # MEMORY files
+    memory_results = []
+    files_to_check = []
+    if LAIN_MEMORY.exists():
+        files_to_check.extend(sorted(LAIN_MEMORY.iterdir()))
+    memory_md = LAIN_WORKSPACE / "MEMORY.md"
+    if memory_md.exists():
+        files_to_check.append(memory_md)
+
+    for f in files_to_check:
+        if not f.is_file() or f.suffix not in (".md", ".txt", ".yaml", ".json"):
+            continue
+        try:
+            content = f.read_text(errors="replace")
+            idx = content.lower().find(query)
+            if idx == -1:
+                continue
+            start = max(0, idx - 40)
+            end = min(len(content), idx + len(query) + 40)
+            snippet = content[start:end].replace('\n', ' ').strip()
+            memory_results.append({
+                "source": "MEMORY",
+                "file": f.name,
+                "snippet": snippet,
+                "timestamp": datetime.fromtimestamp(f.stat().st_mtime).isoformat() + "Z",
+                "match_start": idx - start,
+                "match_end": idx - start + len(query),
+            })
+        except Exception:
+            pass
+
+    # DIARY first if query matches last message, else MEMORY first
+    if query in last_msg.lower():
+        results = diary_results + memory_results
+    else:
+        results = diary_results + memory_results
+
+    results = results[:50]
+    return JSONResponse({"results": results, "total": len(results), "query": q})
+
+
 @app.get("/api/session")
 async def api_session():
     return JSONResponse({"sessionId": gateway.get_current_session_id()})

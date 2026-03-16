@@ -62,6 +62,10 @@
             <div class="nav-label-code">Tsk099</div>
             <div class="nav-label-name">TASKS</div>
         </div>
+        <div class="nav-label-item" data-target="search">
+            <div class="nav-label-code">Sch011</div>
+            <div class="nav-label-name">SEARCH</div>
+        </div>
     </div>
 
     <div class="hub-ui">
@@ -177,6 +181,24 @@
     </div>
 </div>
 
+<!-- ── SEARCH SCREEN ──────────────────────────────────── -->
+<div id="screen-search" class="screen">
+    <div class="screen-header">
+        <button class="back-btn" data-target="hub">◀ RETURN</button>
+        <span class="screen-title" data-glitch>SEARCH // WIRED</span>
+        <span class="screen-code green">Sch011</span>
+    </div>
+    <div class="search-container">
+        <div class="search-prompt-row">
+            <span class="prompt-sym orange">▸</span>
+            <input id="search-input" class="search-input" placeholder="QUERY //" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="search-results" id="search-results">
+            <div class="search-empty">NO SIGNAL — WIRED SILENT</div>
+        </div>
+    </div>
+</div>
+
 <!-- ── VOLUME CONTROL ─────────────────────────────────── -->
 <div id="volume-control">
     <span class="vol-icon" id="vol-icon">♪</span>
@@ -207,6 +229,8 @@
                 <tr><td class="green">3</td><td>Go to MEMORY</td></tr>
                 <tr><td class="green">4</td><td>Go to PSYCHE</td></tr>
                 <tr><td class="green">5</td><td>Go to TASKS</td></tr>
+                <tr><td class="green">6</td><td>Go to SEARCH</td></tr>
+                <tr><td class="green">/</td><td>Open SEARCH from anywhere</td></tr>
                 <tr><td class="green">Esc</td><td>Return to HUB</td></tr>
                 <tr><td class="green">m</td><td>Toggle mute</td></tr>
                 <tr><td class="green">?</td><td>Show / hide this panel</td></tr>
@@ -215,7 +239,6 @@
                 <tr><th class="cyan" colspan="2">DIARY (when not in input)</th></tr>
             </thead>
             <tbody>
-                <tr><td class="green">/</td><td>Focus message input</td></tr>
                 <tr><td class="green">r</td><td>Scroll to bottom</td></tr>
             </tbody>
         </table>
@@ -232,6 +255,7 @@
 <script src="js/memory.js"></script>
 <script src="js/status.js"></script>
 <script src="js/tasks.js"></script>
+<script src="js/search.js"></script>
 <script src="js/hotkeys.js"></script>
 <script src="js/app.js"></script>
 </body>
