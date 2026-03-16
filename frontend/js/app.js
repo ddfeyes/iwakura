@@ -9,6 +9,7 @@
     // ── State ─────────────────────────────────────────────────
     let currentScreen = 'boot';
     let orbNav        = null;
+    let lainChar      = null;   // LainCharacter instance
     let chat          = null;
     let memory        = null;
     let psyche        = null;
@@ -168,10 +169,26 @@
 
         if (!canvas) return;
 
+        // Init Lain character (once)
+        if (!lainChar) {
+            const charEl = document.getElementById('lain-char-container');
+            if (charEl && window.LainCharacter) {
+                lainChar = new LainCharacter(charEl);
+                lainChar.init();
+            }
+        }
+
         if (!orbNav) {
             orbNav = new OrbitalNav(canvas, labelsDiv, (id) => {
+                if (lainChar) lainChar.onNavigate();
                 showScreen(id);
             });
+            // Wire nav hover → character reactions
+            orbNav.onHoverChange = (navId) => {
+                if (!lainChar) return;
+                if (navId) lainChar.onHoverNav(navId);
+                else       lainChar.onLeaveNav();
+            };
             orbNav.init();
         } else {
             orbNav.resume();
