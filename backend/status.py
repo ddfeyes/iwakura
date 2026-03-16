@@ -53,7 +53,7 @@ async def get_ao_sessions() -> list[dict]:
         parts = line.strip().split("|")
         if len(parts) < 3:
             continue
-        name, created_str, activity_str = parts[0], parts[1], parts[2]
+        name, _, activity_str = parts[0], parts[1], parts[2]
         if "iw-" not in name:
             continue
         try:
@@ -65,7 +65,7 @@ async def get_ao_sessions() -> list[dict]:
 
         last_line = await _run(["tmux", "capture-pane", "-t", name, "-p"])
         # get last non-empty line
-        lines = [l for l in last_line.splitlines() if l.strip()]
+        lines = [ln for ln in last_line.splitlines() if ln.strip()]
         last = lines[-1][:80] if lines else ""
 
         sessions.append({
