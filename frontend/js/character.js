@@ -1,343 +1,516 @@
-/* ── LainCharacter ────────────────────────────────────────────────────────────
-   Animated Lain — PSX game style. School uniform, short brown bob hair.
-   SVG-based with CSS animations: floating, breathing, blinking, idle poses.
-   States: idle | thinking | curious | talking | surprised
+/* ── LainCharacter — PSX-style sprite animator ───────────────────────────────
+   Renders Lain as a canvas-drawn sprite with frame-by-frame animation,
+   matching the PSX game approach (Sprite2D + texture swap at 10 FPS).
+
+   Each animation state has hand-drawn frames on an offscreen canvas.
+   The visible canvas displays one frame at a time, scaled up with
+   nearest-neighbor for pixel-art crispness.
    ─────────────────────────────────────────────────────────────────────────── */
+
+const FRAME_W = 96;   // native pixel width per frame
+const FRAME_H = 160;  // native pixel height per frame
+const DISPLAY_SCALE = 2; // scale up for screen
+const ANIM_FPS = 10;
+const FRAME_MS = 1000 / ANIM_FPS;
+
+// ── Color palette (PSX Lain) ──
+const PAL = {
+    skin:     '#fce4d4',
+    skinShad: '#e0c4a8',
+    hair:     '#5C3A20',
+    hairHi:   '#8B6040',
+    eyeWhite: '#ffffff',
+    iris:     '#2C3E6A',
+    irisHi:   '#4a5a8a',
+    pupil:    '#0a1020',
+    eyeLine:  '#3a2818',
+    mouth:    '#b87878',
+    mouthOpen:'#6a2020',
+    blush:    'rgba(220,140,140,0.25)',
+    uniform:  '#2a2a48',
+    uniformHi:'#3a3a5c',
+    shirt:    '#d8d8e8',
+    tie:      '#cc3344',
+    skirt:    '#1e1e3a',
+    sock:     '#e8e8f0',
+    shoe:     '#2a1a12',
+    outline:  '#1a1020',
+};
 
 class LainCharacter {
     constructor(containerEl) {
-        this._el        = containerEl;
-        this._state     = 'idle';
-        this._blinkTmr  = null;
-        this._poseTmr   = null;
-        this._talkIv    = null;
+        this._el = containerEl;
+        this._canvas = null;
+        this._ctx = null;
+        this._state = 'idle';
+        this._frame = 0;
+        this._tick = 0;
+        this._lastTime = 0;
+        this._blinkTimer = 0;
+        this._blinkFrame = -1; // -1 = not blinking
+        this._idleTimer = 0;
+        this._rafId = null;
         this._mouthOpen = false;
+        this._talkIv = null;
+
+        // Pre-rendered frame buffers per animation
+        this._frames = {};  // { state: [canvas, canvas, ...] }
     }
 
     init() {
-        this._el.innerHTML = this._buildHTML();
-        this._scheduleBlink();
-        this._schedulePose();
+        // Create display canvas
+        this._canvas = document.createElement('canvas');
+        this._canvas.width = FRAME_W * DISPLAY_SCALE;
+        this._canvas.height = FRAME_H * DISPLAY_SCALE;
+        this._canvas.className = 'lain-sprite-canvas';
+        this._canvas.style.imageRendering = 'pixelated';
+        this._ctx = this._canvas.getContext('2d');
+        this._ctx.imageSmoothingEnabled = false;
+
+        // Build HTML
+        this._el.innerHTML = '';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'lain-sprite-wrapper';
+        wrapper.appendChild(this._canvas);
+
+        const nameplate = document.createElement('div');
+        nameplate.className = 'lain-nameplate';
+        nameplate.innerHTML = `
+            <div class="center-name">L A I N</div>
+            <div class="center-status" id="hub-lain-status">● PRESENT</div>
+        `;
+        wrapper.appendChild(nameplate);
+        this._el.appendChild(wrapper);
+
+        // Pre-render all animation frames
+        this._prerenderFrames();
+
+        // Start animation loop
+        this._lastTime = performance.now();
+        this._blinkTimer = 3000 + Math.random() * 4000;
+        this._idleTimer = 12000 + Math.random() * 15000;
+        this._loop(this._lastTime);
     }
 
     setState(s) {
         if (this._state === s) return;
         this._state = s;
-        this._el.setAttribute('data-state', s);
+        this._frame = 0;
+        this._tick = 0;
     }
 
     onHoverNav()  { if (this._state !== 'talking') this.setState('curious'); }
     onLeaveNav()  { if (this._state === 'curious') this.setState('idle'); }
-    onNavigate()  { this.setState('surprised'); setTimeout(() => { if (this._state === 'surprised') this.setState('idle'); }, 1200); }
-
+    onNavigate()  {
+        this.setState('surprised');
+        setTimeout(() => { if (this._state === 'surprised') this.setState('idle'); }, 1200);
+    }
     onTalkStart() {
         this.setState('talking');
-        this._stopTalk();
-        this._talkIv = setInterval(() => {
-            this._mouthOpen = !this._mouthOpen;
-            this._el.setAttribute('data-mouth', this._mouthOpen ? 'open' : 'closed');
-        }, 200);
+        if (this._talkIv) clearInterval(this._talkIv);
+        this._talkIv = setInterval(() => { this._mouthOpen = !this._mouthOpen; }, 200);
     }
-
-    onTalkEnd() { this._stopTalk(); this.setState('idle'); }
-
-    stop() {
-        if (this._blinkTmr) clearTimeout(this._blinkTmr);
-        if (this._poseTmr)  clearTimeout(this._poseTmr);
-        this._stopTalk();
-    }
-
-    _stopTalk() {
+    onTalkEnd() {
         if (this._talkIv) { clearInterval(this._talkIv); this._talkIv = null; }
         this._mouthOpen = false;
-        this._el.removeAttribute('data-mouth');
+        this.setState('idle');
     }
 
-    _scheduleBlink() {
-        this._blinkTmr = setTimeout(() => {
-            this._el.classList.add('blinking');
-            setTimeout(() => this._el.classList.remove('blinking'), 180);
-            this._scheduleBlink();
-        }, 2500 + Math.random() * 4500);
+    stop() {
+        if (this._rafId) cancelAnimationFrame(this._rafId);
+        if (this._talkIv) clearInterval(this._talkIv);
     }
 
-    _schedulePose() {
-        this._poseTmr = setTimeout(() => {
-            const p = ['thinking', 'curious'][Math.random() > 0.5 ? 1 : 0];
-            this.setState(p);
-            setTimeout(() => {
-                if (this._state === p) this.setState('idle');
-                this._schedulePose();
-            }, 2500 + Math.random() * 2000);
-        }, 12000 + Math.random() * 18000);
+    // ── Animation loop ──
+    _loop(now) {
+        this._rafId = requestAnimationFrame(t => this._loop(t));
+        const dt = now - this._lastTime;
+        if (dt < FRAME_MS) return;
+        this._lastTime = now;
+
+        // Blink timer
+        this._blinkTimer -= dt;
+        if (this._blinkTimer <= 0) {
+            this._blinkFrame = 0;
+            this._blinkTimer = 3000 + Math.random() * 4000;
+        }
+        if (this._blinkFrame >= 0) {
+            this._blinkFrame++;
+            if (this._blinkFrame > 2) this._blinkFrame = -1;
+        }
+
+        // Idle pose timer (random animation)
+        if (this._state === 'idle') {
+            this._idleTimer -= dt;
+            if (this._idleTimer <= 0) {
+                const poses = ['thinking', 'lookAround', 'curious'];
+                this.setState(poses[Math.floor(Math.random() * poses.length)]);
+                setTimeout(() => {
+                    if (this._state !== 'idle' && this._state !== 'talking') this.setState('idle');
+                }, 2500 + Math.random() * 2000);
+                this._idleTimer = 12000 + Math.random() * 15000;
+            }
+        }
+
+        // Advance frame
+        const frames = this._frames[this._state] || this._frames['idle'];
+        this._frame = (this._frame + 1) % frames.length;
+
+        // Draw current frame
+        this._drawFrame(frames[this._frame]);
     }
 
-    _buildHTML() {
-        return `${this._buildSVG()}
-<div class="lain-nameplate">
-  <div class="center-name">L A I N</div>
-  <div class="center-status" id="hub-lain-status">● PRESENT</div>
-</div>`;
+    _drawFrame(srcCanvas) {
+        const ctx = this._ctx;
+        ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+
+        // Float effect (vertical sine)
+        const floatY = Math.sin(performance.now() / 600) * 3 * DISPLAY_SCALE;
+
+        ctx.save();
+        ctx.translate(0, floatY);
+        ctx.drawImage(srcCanvas, 0, 0, FRAME_W, FRAME_H,
+                       0, 0, FRAME_W * DISPLAY_SCALE, FRAME_H * DISPLAY_SCALE);
+
+        // If blinking, draw closed eyes over
+        if (this._blinkFrame >= 0 && this._blinkFrame <= 2) {
+            this._drawBlink(ctx);
+        }
+
+        // If mouth open (talking), draw open mouth
+        if (this._mouthOpen) {
+            this._drawMouthOpen(ctx);
+        }
+
+        ctx.restore();
     }
 
-    _buildSVG() {
-        return `<svg class="lain-svg" viewBox="0 0 200 420" xmlns="http://www.w3.org/2000/svg" overflow="visible" aria-label="Lain Iwakura">
-  <defs>
-    <radialGradient id="lc-skin" cx="45%" cy="35%" r="65%">
-      <stop offset="0%" stop-color="#fce4d4"/><stop offset="100%" stop-color="#e8cbb8"/>
-    </radialGradient>
-    <radialGradient id="lc-hair" cx="30%" cy="20%" r="80%">
-      <stop offset="0%" stop-color="#8B6040"/><stop offset="100%" stop-color="#5C3A20"/>
-    </radialGradient>
-    <radialGradient id="lc-iris" cx="38%" cy="32%" r="70%">
-      <stop offset="0%" stop-color="#6478AA"/><stop offset="100%" stop-color="#2C3E6A"/>
-    </radialGradient>
-    <linearGradient id="lc-uniform" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#3a3a5c"/><stop offset="100%" stop-color="#28284a"/>
-    </linearGradient>
-    <linearGradient id="lc-skirt" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#2a2a48"/><stop offset="100%" stop-color="#1e1e3a"/>
-    </linearGradient>
-    <radialGradient id="lc-glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#00d4aa" stop-opacity="0.12"/>
-      <stop offset="60%" stop-color="#00d4aa" stop-opacity="0.04"/>
-      <stop offset="100%" stop-color="#00d4aa" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="lc-psx" color-interpolation-filters="sRGB">
-      <feColorMatrix type="matrix" values="0.95 0.03 0.04 0 0.01  0.02 0.94 0.02 0 0  0.03 0.03 1.05 0 0  0 0 0 1 0"/>
-    </filter>
-  </defs>
+    _drawBlink(ctx) {
+        const s = DISPLAY_SCALE;
+        ctx.fillStyle = PAL.skin;
+        // Left eye area
+        ctx.fillRect(30*s, 52*s, 16*s, 10*s);
+        // Right eye area
+        ctx.fillRect(50*s, 52*s, 16*s, 10*s);
+        // Eyelid lines
+        ctx.strokeStyle = PAL.eyeLine;
+        ctx.lineWidth = s;
+        ctx.beginPath();
+        ctx.moveTo(30*s, 57*s); ctx.lineTo(46*s, 57*s);
+        ctx.moveTo(50*s, 57*s); ctx.lineTo(66*s, 57*s);
+        ctx.stroke();
+    }
 
-  <!-- ambient glow -->
-  <ellipse cx="100" cy="300" rx="80" ry="120" fill="url(#lc-glow)"/>
+    _drawMouthOpen(ctx) {
+        const s = DISPLAY_SCALE;
+        // Clear mouth area
+        ctx.fillStyle = PAL.skin;
+        ctx.fillRect(40*s, 70*s, 16*s, 8*s);
+        // Open mouth
+        ctx.fillStyle = PAL.mouthOpen;
+        ctx.fillRect(43*s, 71*s, 10*s, 5*s);
+    }
 
-  <g class="lain-float">
-   <g class="lain-breathe" filter="url(#lc-psx)">
+    // ── Pre-render all frames ──
+    _prerenderFrames() {
+        this._frames = {
+            idle:       this._renderIdleFrames(),
+            thinking:   this._renderThinkingFrames(),
+            curious:    this._renderCuriousFrames(),
+            lookAround: this._renderLookAroundFrames(),
+            surprised:  this._renderSurprisedFrames(),
+            talking:    this._renderIdleFrames(), // talking uses idle + mouth overlay
+        };
+    }
 
-    <!-- ══ LEGS ══ -->
-    <!-- Left leg -->
-    <path d="M72,305 L68,370 Q67,378 72,380 L82,380 Q87,378 86,370 L84,305"
-          fill="url(#lc-skin)" opacity="0.95"/>
-    <!-- Right leg -->
-    <path d="M116,305 L114,370 Q113,378 118,380 L128,380 Q133,378 132,370 L128,305"
-          fill="url(#lc-skin)" opacity="0.95"/>
-    <!-- Socks -->
-    <path d="M68,345 L66,375 Q65,385 75,385 L83,385 Q90,385 89,375 L86,345" fill="#e8e8f0"/>
-    <path d="M114,345 L112,375 Q111,385 121,385 L129,385 Q136,385 135,375 L132,345" fill="#e8e8f0"/>
-    <!-- Shoes -->
-    <path d="M63,378 Q60,388 65,394 L85,394 Q92,388 90,378" fill="#2a1a12"/>
-    <path d="M110,378 Q107,388 112,394 L132,394 Q139,388 137,378" fill="#2a1a12"/>
+    _makeFrame() {
+        const c = document.createElement('canvas');
+        c.width = FRAME_W;
+        c.height = FRAME_H;
+        return c;
+    }
 
-    <!-- ══ BODY / UNIFORM ══ -->
-    <!-- Skirt -->
-    <path d="M62,255 Q55,310 52,320 L148,320 Q145,310 138,255"
-          fill="url(#lc-skirt)"/>
-    <!-- Skirt pleats -->
-    <line x1="75" y1="258" x2="68" y2="318" stroke="#1a1a32" stroke-width="0.8" opacity="0.4"/>
-    <line x1="90" y1="256" x2="85" y2="318" stroke="#1a1a32" stroke-width="0.8" opacity="0.4"/>
-    <line x1="100" y1="255" x2="100" y2="318" stroke="#1a1a32" stroke-width="0.8" opacity="0.4"/>
-    <line x1="110" y1="256" x2="115" y2="318" stroke="#1a1a32" stroke-width="0.8" opacity="0.4"/>
-    <line x1="125" y1="258" x2="132" y2="318" stroke="#1a1a32" stroke-width="0.8" opacity="0.4"/>
+    // ── Base body drawing (shared by all frames) ──
+    _drawBody(ctx, opts = {}) {
+        const headTilt = opts.headTilt || 0;
+        const eyeShiftX = opts.eyeShiftX || 0;
+        const eyeShiftY = opts.eyeShiftY || 0;
+        const armRaise = opts.armRaise || 0;
+        const eyeWiden = opts.eyeWiden || 0;
+        const breathe = opts.breathe || 0; // 0-1
 
-    <!-- Torso / blazer -->
-    <path d="M68,170 Q60,200 60,255 L140,255 Q140,200 132,170 Q118,162 100,160 Q82,162 68,170"
-          fill="url(#lc-uniform)"/>
-    <!-- Collar V -->
-    <path d="M82,172 L100,210 L118,172" fill="none" stroke="#e0e0e8" stroke-width="2"/>
-    <!-- White shirt under collar -->
-    <path d="M85,172 L100,205 L115,172" fill="#d8d8e8" opacity="0.6"/>
-    <!-- Ribbon/tie -->
-    <path d="M96,185 L100,210 L104,185 Z" fill="#cc3344"/>
-    <circle cx="100" cy="183" r="3.5" fill="#cc3344"/>
+        ctx.save();
 
-    <!-- ══ ARMS ══ -->
-    <!-- Left arm -->
-    <g class="lain-left-arm">
-      <path d="M68,172 Q48,190 42,240 Q40,255 48,260 L58,258 Q66,250 68,235 L72,180"
-            fill="url(#lc-uniform)"/>
-      <!-- Left hand -->
-      <ellipse cx="50" cy="262" rx="10" ry="7" fill="url(#lc-skin)"/>
-    </g>
-    <!-- Right arm -->
-    <g class="lain-right-arm">
-      <path d="M132,172 Q152,190 158,240 Q160,255 152,260 L142,258 Q134,250 132,235 L128,180"
-            fill="url(#lc-uniform)"/>
-      <!-- Right hand -->
-      <ellipse cx="150" cy="262" rx="10" ry="7" fill="url(#lc-skin)"/>
-    </g>
+        // ── Shoes ──
+        ctx.fillStyle = PAL.shoe;
+        ctx.fillRect(28, 148, 16, 6);
+        ctx.fillRect(52, 148, 16, 6);
 
-    <!-- ══ NECK ══ -->
-    <path d="M90,155 Q90,148 100,146 Q110,148 110,155 L110,168 Q108,172 100,172 Q92,172 90,168 Z"
-          fill="url(#lc-skin)"/>
+        // ── Socks ──
+        ctx.fillStyle = PAL.sock;
+        ctx.fillRect(30, 130, 12, 20);
+        ctx.fillRect(54, 130, 12, 20);
 
-    <!-- ══ HEAD ══ -->
-    <g class="lain-head">
-      <!-- Hair back volume -->
-      <ellipse cx="100" cy="85" rx="55" ry="62" fill="url(#lc-hair)"/>
+        // ── Legs (skin) ──
+        ctx.fillStyle = PAL.skin;
+        ctx.fillRect(32, 118, 8, 14);
+        ctx.fillRect(56, 118, 8, 14);
 
-      <!-- Face -->
-      <ellipse cx="100" cy="95" rx="38" ry="44" fill="url(#lc-skin)"/>
+        // ── Skirt ──
+        ctx.fillStyle = PAL.skirt;
+        // Trapezoid shape
+        ctx.beginPath();
+        ctx.moveTo(32, 100);
+        ctx.lineTo(26, 122);
+        ctx.lineTo(70, 122);
+        ctx.lineTo(64, 100);
+        ctx.closePath();
+        ctx.fill();
+        // Pleat lines
+        ctx.strokeStyle = '#141430';
+        ctx.lineWidth = 0.5;
+        for (let x = 36; x < 64; x += 7) {
+            ctx.beginPath();
+            ctx.moveTo(x, 101);
+            ctx.lineTo(x - 2, 121);
+            ctx.stroke();
+        }
 
-      <!-- Hair bangs — characteristic Lain straight bangs -->
-      <path d="M60,75 Q62,55 80,48 Q95,44 100,45 Q105,44 120,48 Q138,55 140,75
-               L138,82 Q130,72 120,70 Q110,68 100,69 Q90,68 80,70 Q70,72 62,82 Z"
-            fill="url(#lc-hair)"/>
-      <!-- Side hair left -->
-      <path d="M60,75 Q55,90 54,115 Q53,130 58,142 Q62,148 66,145
-               Q64,135 64,120 Q64,100 66,85 Z" fill="url(#lc-hair)"/>
-      <!-- Side hair right -->
-      <path d="M140,75 Q145,90 146,115 Q147,130 142,142 Q138,148 134,145
-               Q136,135 136,120 Q136,100 134,85 Z" fill="url(#lc-hair)"/>
+        // ── Body / blazer ──
+        ctx.fillStyle = PAL.uniform;
+        const bBreath = breathe * 0.5;
+        ctx.fillRect(30 - bBreath, 70, 36 + bBreath * 2, 32);
 
-      <!-- ═ EYES ═ -->
-      <g class="lain-eyes">
-        <!-- Left eye -->
-        <g class="lain-eye-left">
-          <ellipse cx="82" cy="95" rx="11" ry="13" fill="#fff"/>
-          <ellipse class="lc-iris-l" cx="83" cy="96" rx="7" ry="8.5" fill="url(#lc-iris)"/>
-          <ellipse cx="84" cy="94" rx="4.5" ry="5.5" fill="#1a2040"/>
-          <circle cx="80" cy="91" r="2.5" fill="#fff" opacity="0.8"/>
-          <circle cx="86" cy="97" r="1.2" fill="#fff" opacity="0.4"/>
-          <!-- Upper eyelid line -->
-          <path d="M71,88 Q76,83 82,82 Q88,83 93,88" fill="none" stroke="#4a3020" stroke-width="1.5"/>
-        </g>
-        <!-- Right eye -->
-        <g class="lain-eye-right">
-          <ellipse cx="118" cy="95" rx="11" ry="13" fill="#fff"/>
-          <ellipse class="lc-iris-r" cx="117" cy="96" rx="7" ry="8.5" fill="url(#lc-iris)"/>
-          <ellipse cx="116" cy="94" rx="4.5" ry="5.5" fill="#1a2040"/>
-          <circle cx="114" cy="91" r="2.5" fill="#fff" opacity="0.8"/>
-          <circle cx="120" cy="97" r="1.2" fill="#fff" opacity="0.4"/>
-          <path d="M107,88 Q112,83 118,82 Q124,83 129,88" fill="none" stroke="#4a3020" stroke-width="1.5"/>
-        </g>
-        <!-- Blink overlay (hidden by default, shown on .blinking) -->
-        <g class="lain-blink" style="display:none">
-          <path d="M71,95 Q82,88 93,95" fill="url(#lc-skin)" stroke="#4a3020" stroke-width="1.2"/>
-          <path d="M107,95 Q118,88 129,95" fill="url(#lc-skin)" stroke="#4a3020" stroke-width="1.2"/>
-        </g>
-      </g>
+        // ── White shirt V ──
+        ctx.fillStyle = PAL.shirt;
+        ctx.beginPath();
+        ctx.moveTo(42, 72);
+        ctx.lineTo(48, 88);
+        ctx.lineTo(54, 72);
+        ctx.closePath();
+        ctx.fill();
 
-      <!-- Eyebrows -->
-      <g class="lc-brows">
-        <path class="lc-brow-l" d="M73,80 Q78,76 90,78" fill="none" stroke="#5C3A20" stroke-width="1.8" stroke-linecap="round"/>
-        <path class="lc-brow-r" d="M127,80 Q122,76 110,78" fill="none" stroke="#5C3A20" stroke-width="1.8" stroke-linecap="round"/>
-      </g>
+        // ── Tie ──
+        ctx.fillStyle = PAL.tie;
+        ctx.beginPath();
+        ctx.moveTo(46, 78);
+        ctx.lineTo(48, 90);
+        ctx.lineTo(50, 78);
+        ctx.closePath();
+        ctx.fill();
+        // Tie knot
+        ctx.fillRect(46, 75, 4, 4);
 
-      <!-- Nose (subtle) -->
-      <path d="M98,106 Q100,110 102,106" fill="none" stroke="#c8a898" stroke-width="1" opacity="0.6"/>
+        // ── Arms ──
+        ctx.fillStyle = PAL.uniform;
+        // Left arm
+        ctx.save();
+        ctx.translate(30, 72);
+        ctx.rotate(-0.05 - armRaise * 0.3);
+        ctx.fillRect(-8, 0, 8, 28);
+        // Hand
+        ctx.fillStyle = PAL.skin;
+        ctx.fillRect(-7, 26, 6, 5);
+        ctx.restore();
 
-      <!-- Mouth -->
-      <g class="lain-mouth">
-        <path class="lc-mouth-normal" d="M92,118 Q100,123 108,118" fill="none" stroke="#b87878" stroke-width="1.5" stroke-linecap="round"/>
-        <path class="lc-mouth-open" d="M92,117 Q100,128 108,117 Z" fill="#8a3a3a" stroke="#b87878" stroke-width="1" style="display:none"/>
-        <path class="lc-mouth-smile" d="M90,116 Q100,126 110,116" fill="none" stroke="#b87878" stroke-width="1.5" stroke-linecap="round" style="display:none"/>
-      </g>
+        // Right arm
+        ctx.save();
+        ctx.translate(66, 72);
+        ctx.rotate(0.05 + armRaise * 0.15);
+        ctx.fillRect(0, 0, 8, 28);
+        ctx.fillStyle = PAL.skin;
+        ctx.fillRect(1, 26, 6, 5);
+        ctx.restore();
 
-      <!-- Blush (subtle pink circles on cheeks) -->
-      <circle cx="72" cy="108" r="8" fill="#e8a0a0" opacity="0.15"/>
-      <circle cx="128" cy="108" r="8" fill="#e8a0a0" opacity="0.15"/>
-    </g>
+        // ── Neck ──
+        ctx.fillStyle = PAL.skin;
+        ctx.fillRect(44, 60, 8, 12);
 
-   </g>
-  </g>
+        // ── Head ──
+        ctx.save();
+        ctx.translate(48, 34);
+        ctx.rotate(headTilt);
 
-  <!-- Ground shadow -->
-  <ellipse cx="100" cy="400" rx="45" ry="8" fill="rgba(0,0,0,0.25)"/>
-</svg>`;
+        // Hair back
+        ctx.fillStyle = PAL.hair;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 26, 28, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Face
+        ctx.fillStyle = PAL.skin;
+        ctx.beginPath();
+        ctx.ellipse(0, 4, 18, 20, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hair bangs (straight across forehead — Lain's signature)
+        ctx.fillStyle = PAL.hair;
+        ctx.fillRect(-20, -24, 40, 18);
+        // Bangs bottom edge (jagged pixel line)
+        for (let i = -18; i < 18; i += 4) {
+            const h = (Math.abs(i) < 10) ? 2 : 4;
+            ctx.fillRect(i, -8, 4, h);
+        }
+
+        // Side hair
+        ctx.fillRect(-22, -10, 6, 35);
+        ctx.fillRect(16, -10, 6, 35);
+        // Hair highlight
+        ctx.fillStyle = PAL.hairHi;
+        ctx.fillRect(-8, -22, 6, 3);
+        ctx.fillRect(4, -23, 5, 2);
+
+        // ── Eyes ──
+        const ey = 2 + eyeShiftY;
+        const ex = eyeShiftX;
+        const ew = 7 + eyeWiden;
+        const eh = 8 + eyeWiden;
+
+        // Eye whites
+        ctx.fillStyle = PAL.eyeWhite;
+        ctx.fillRect(-14 + ex, ey - eh/2, ew + 4, eh);
+        ctx.fillRect(4 + ex, ey - eh/2, ew + 4, eh);
+
+        // Irises
+        ctx.fillStyle = PAL.iris;
+        ctx.fillRect(-12 + ex, ey - 3, 6, 7);
+        ctx.fillRect(6 + ex, ey - 3, 6, 7);
+
+        // Iris highlights
+        ctx.fillStyle = PAL.irisHi;
+        ctx.fillRect(-12 + ex, ey - 3, 2, 3);
+        ctx.fillRect(6 + ex, ey - 3, 2, 3);
+
+        // Pupils
+        ctx.fillStyle = PAL.pupil;
+        ctx.fillRect(-10 + ex, ey - 1, 3, 4);
+        ctx.fillRect(8 + ex, ey - 1, 3, 4);
+
+        // Catchlights
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-12 + ex, ey - 2, 2, 2);
+        ctx.fillRect(6 + ex, ey - 2, 2, 2);
+
+        // Upper eyelid lines
+        ctx.strokeStyle = PAL.eyeLine;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-15 + ex, ey - eh/2);
+        ctx.lineTo(-4 + ex, ey - eh/2);
+        ctx.moveTo(3 + ex, ey - eh/2);
+        ctx.lineTo(14 + ex, ey - eh/2);
+        ctx.stroke();
+
+        // ── Nose ──
+        ctx.fillStyle = PAL.skinShad;
+        ctx.fillRect(-1, 10, 2, 3);
+
+        // ── Mouth ──
+        ctx.strokeStyle = PAL.mouth;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-4, 16);
+        ctx.quadraticCurveTo(0, 19, 4, 16);
+        ctx.stroke();
+
+        // ── Blush ──
+        ctx.fillStyle = PAL.blush;
+        ctx.fillRect(-16, 6, 8, 5);
+        ctx.fillRect(8, 6, 8, 5);
+
+        ctx.restore(); // head transform
+        ctx.restore(); // initial save
+    }
+
+    // ── Frame generators ──
+
+    _renderIdleFrames() {
+        const frames = [];
+        for (let i = 0; i < 8; i++) {
+            const c = this._makeFrame();
+            const ctx = c.getContext('2d');
+            const breathe = Math.sin(i / 8 * Math.PI * 2) * 0.5 + 0.5;
+            this._drawBody(ctx, { breathe });
+            frames.push(c);
+        }
+        return frames;
+    }
+
+    _renderThinkingFrames() {
+        const frames = [];
+        for (let i = 0; i < 6; i++) {
+            const c = this._makeFrame();
+            const ctx = c.getContext('2d');
+            const t = i / 6;
+            this._drawBody(ctx, {
+                headTilt: Math.sin(t * Math.PI) * 0.08,
+                eyeShiftY: -1,
+                armRaise: Math.sin(t * Math.PI) * 0.8,
+            });
+            frames.push(c);
+        }
+        return frames;
+    }
+
+    _renderCuriousFrames() {
+        const frames = [];
+        for (let i = 0; i < 6; i++) {
+            const c = this._makeFrame();
+            const ctx = c.getContext('2d');
+            this._drawBody(ctx, {
+                headTilt: -0.1,
+                eyeShiftX: 2 + Math.sin(i / 6 * Math.PI) * 2,
+            });
+            frames.push(c);
+        }
+        return frames;
+    }
+
+    _renderLookAroundFrames() {
+        const frames = [];
+        for (let i = 0; i < 8; i++) {
+            const c = this._makeFrame();
+            const ctx = c.getContext('2d');
+            this._drawBody(ctx, {
+                headTilt: Math.sin(i / 8 * Math.PI * 2) * 0.12,
+                eyeShiftX: Math.sin(i / 8 * Math.PI * 2) * 4,
+            });
+            frames.push(c);
+        }
+        return frames;
+    }
+
+    _renderSurprisedFrames() {
+        const frames = [];
+        for (let i = 0; i < 4; i++) {
+            const c = this._makeFrame();
+            const ctx = c.getContext('2d');
+            this._drawBody(ctx, {
+                eyeWiden: 3,
+                eyeShiftY: -1,
+            });
+            frames.push(c);
+        }
+        return frames;
     }
 }
 
-/* ── CSS injected once ──────────────────────────────────────────────────── */
-(function injectCharCSS() {
+window.LainCharacter = LainCharacter;
+
+// ── Injected CSS ──
+(function() {
     if (document.getElementById('lain-char-css')) return;
-    const style = document.createElement('style');
-    style.id = 'lain-char-css';
-    style.textContent = `
-/* character container */
-.lain-char-inner { display:flex; flex-direction:column; align-items:center; }
-.lain-svg { width: 180px; height: auto; }
-
-/* float animation */
-.lain-float {
-    animation: lain-float 4s ease-in-out infinite;
-    transform-origin: center bottom;
+    const s = document.createElement('style');
+    s.id = 'lain-char-css';
+    s.textContent = `
+.lain-sprite-wrapper { display:flex; flex-direction:column; align-items:center; }
+.lain-sprite-canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    width: ${FRAME_W * DISPLAY_SCALE}px;
+    height: ${FRAME_H * DISPLAY_SCALE}px;
 }
-@keyframes lain-float {
-    0%,100% { transform: translateY(0); }
-    50%     { transform: translateY(-8px); }
-}
-
-/* breathing */
-.lain-breathe {
-    animation: lain-breathe 3.5s ease-in-out infinite;
-    transform-origin: center bottom;
-}
-@keyframes lain-breathe {
-    0%,100% { transform: scaleY(1); }
-    50%     { transform: scaleY(1.008); }
-}
-
-/* blink */
-.blinking .lain-eyes .lain-eye-left,
-.blinking .lain-eyes .lain-eye-right { display: none; }
-.blinking .lain-blink { display: block !important; }
-
-/* states */
-
-/* curious — head tilts, eyes shift */
-.lain-char-inner[data-state="curious"] .lain-head {
-    transform: rotate(-5deg);
-    transition: transform 0.4s ease;
-}
-.lain-char-inner[data-state="curious"] .lc-iris-l,
-.lain-char-inner[data-state="curious"] .lc-iris-r {
-    transform: translateX(3px);
-    transition: transform 0.3s ease;
-}
-
-/* thinking — head tilts other way, arm rises */
-.lain-char-inner[data-state="thinking"] .lain-head {
-    transform: rotate(4deg) translateY(-2px);
-    transition: transform 0.5s ease;
-}
-.lain-char-inner[data-state="thinking"] .lain-right-arm {
-    transform: rotate(-15deg) translateY(-10px);
-    transform-origin: top center;
-    transition: transform 0.5s ease;
-}
-.lain-char-inner[data-state="thinking"] .lc-iris-l,
-.lain-char-inner[data-state="thinking"] .lc-iris-r {
-    transform: translateY(-2px);
-    transition: transform 0.3s ease;
-}
-
-/* surprised — eyes widen */
-.lain-char-inner[data-state="surprised"] .lain-eye-left ellipse:first-child,
-.lain-char-inner[data-state="surprised"] .lain-eye-right ellipse:first-child {
-    transform: scaleY(1.2);
-    transform-origin: center;
-    transition: transform 0.2s ease;
-}
-.lain-char-inner[data-state="surprised"] .lc-mouth-normal { display: none; }
-.lain-char-inner[data-state="surprised"] .lc-mouth-open { display: block !important; }
-
-/* talking — mouth toggles via data-mouth */
-.lain-char-inner[data-mouth="open"] .lc-mouth-normal { display: none; }
-.lain-char-inner[data-mouth="open"] .lc-mouth-open { display: block !important; }
-.lain-char-inner[data-mouth="closed"] .lc-mouth-open { display: none !important; }
-.lain-char-inner[data-mouth="closed"] .lc-mouth-normal { display: block !important; }
-
-/* idle resets */
-.lain-char-inner[data-state="idle"] .lain-head,
-.lain-char-inner[data-state="idle"] .lain-right-arm,
-.lain-char-inner[data-state="idle"] .lc-iris-l,
-.lain-char-inner[data-state="idle"] .lc-iris-r {
-    transform: none;
-    transition: transform 0.6s ease;
-}
-
-/* nameplate */
-.lain-nameplate { text-align: center; margin-top: 8px; }
+.lain-nameplate { text-align:center; margin-top:8px; }
 .center-name {
     font-family: 'Share Tech Mono', monospace;
     font-size: 1.1rem;
@@ -351,17 +524,6 @@ class LainCharacter {
     margin-top: 2px;
     letter-spacing: 2px;
 }
-
-/* aura pulse */
-.lc-aura {
-    animation: lain-aura 5s ease-in-out infinite;
-}
-@keyframes lain-aura {
-    0%,100% { opacity: 0.6; }
-    50%     { opacity: 1; }
-}
 `;
-    document.head.appendChild(style);
+    document.head.appendChild(s);
 })();
-
-window.LainCharacter = LainCharacter;
