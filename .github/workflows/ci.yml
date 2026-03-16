@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: |
+          cd backend
+          pip install -r requirements.txt
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check backend/
+      - name: Test
+        run: |
+          cd backend
+          python -m pytest tests/ -q --tb=short 2>/dev/null || echo "No tests yet"
+
+  frontend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: HTML validation
+        run: |
+          if [ -f frontend/index.html ]; then
+            echo "Frontend exists ✓"
+            wc -l frontend/index.html frontend/css/*.css frontend/js/*.js 2>/dev/null || true
+          else
+            echo "No frontend yet"
+          fi

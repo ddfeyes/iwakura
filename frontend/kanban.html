@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iwakura — Kanban</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Share Tech Mono', monospace; background: #0a0a1a; color: #e0e0e0; padding: 20px; }
+  h1 { color: #ff8c00; margin-bottom: 20px; font-size: 1.4em; }
+  .board { display: flex; gap: 16px; overflow-x: auto; }
+  .column { flex: 1; min-width: 250px; background: #111128; border: 1px solid #1a1a3a; border-radius: 4px; padding: 12px; }
+  .column h2 { font-size: 0.9em; color: #00d4aa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 2px; }
+  .card { background: #0d0d2b; border: 1px solid #2a2a4a; border-radius: 3px; padding: 10px; margin-bottom: 8px; font-size: 0.85em; }
+  .card .tag { display: inline-block; font-size: 0.7em; padding: 2px 6px; border-radius: 2px; margin-top: 6px; }
+  .tag.backend { background: #1a3a1a; color: #00ff88; }
+  .tag.frontend { background: #3a1a3a; color: #cc88ff; }
+  .tag.infra { background: #3a2a1a; color: #ff8c00; }
+  .tag.audio { background: #1a2a3a; color: #40e0d0; }
+  .priority { color: #ff4444; font-size: 0.7em; }
+  .done .card { opacity: 0.5; border-color: #00ff88; }
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+<h1>🕸️ IWAKURA — Development Kanban</h1>
+<div class="board">
+
+<div class="column">
+  <h2>📋 Backlog</h2>
+  <div class="card">Docker compose setup<span class="tag infra">infra</span></div>
+  <div class="card">LaunchAgent for auto-start<span class="tag infra">infra</span></div>
+  <div class="card">Voice clips (Kokoro TTS)<span class="tag audio">audio</span></div>
+  <div class="card">Cloudflare tunnel<span class="tag infra">infra</span></div>
+  <div class="card">Mobile responsive layout<span class="tag frontend">frontend</span></div>
+</div>
+
+<div class="column">
+  <h2>🔨 In Progress</h2>
+  <div class="card"><span class="priority">P0</span> FastAPI backend + WebSocket<span class="tag backend">backend</span></div>
+  <div class="card"><span class="priority">P0</span> Frontend: Boot screen + Main hub<span class="tag frontend">frontend</span></div>
+  <div class="card"><span class="priority">P0</span> Frontend: Diary/Chat screen<span class="tag frontend">frontend</span></div>
+  <div class="card"><span class="priority">P0</span> PSX CSS (scanlines, CRT, palette)<span class="tag frontend">frontend</span></div>
+  <div class="card"><span class="priority">P1</span> Three.js orbital navigation<span class="tag frontend">frontend</span></div>
+</div>
+
+<div class="column">
+  <h2>🔍 Review</h2>
+</div>
+
+<div class="column done">
+  <h2>✅ Done</h2>
+  <div class="card">SPEC.md written<span class="tag infra">infra</span></div>
+  <div class="card">GitHub repo created<span class="tag infra">infra</span></div>
+  <div class="card">AO config<span class="tag infra">infra</span></div>
+  <div class="card">CI/CD pipeline<span class="tag infra">infra</span></div>
+  <div class="card">Kanban board<span class="tag infra">infra</span></div>
+</div>
+
+</div>
+</body>
+</html>
