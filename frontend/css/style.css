@@ -1290,3 +1290,64 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
     box-shadow: 0 0 18px rgba(255,204,0,0.4);
 }
 .nav-label-item[data-target="wired"] .nav-label-code { color: #ffcc00; }
+
+/* ── Lain SVG Silhouette ───────────────────────────────────── */
+.lain-silhouette-wrap {
+    width: 90px;
+    height: 150px;
+    margin: 0 auto 12px;
+    pointer-events: none;
+    filter:
+        drop-shadow(0 0 6px rgba(0,212,170,0.6))
+        drop-shadow(0 0 18px rgba(0,212,170,0.3))
+        drop-shadow(0 0 40px rgba(0,212,170,0.12));
+    animation: lain-float 7s ease-in-out infinite;
+    opacity: 0.8;
+}
+.lain-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+@keyframes lain-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+}
+
+/* ── Hub Visual Enhancements ───────────────────────────────── */
+
+/* Depth-fade for nav labels (set by JS via style.opacity) */
+.nav-label-item {
+    transition: all 0.2s, opacity 0.4s;
+}
+
+/* Soften the center label stack for integration with silhouette */
+.center-name {
+    text-shadow:
+        0 0 15px rgba(255,255,255,0.5),
+        0 0 40px rgba(0,212,170,0.35),
+        0 0 80px rgba(0,212,170,0.12);
+}
+
+.center-status {
+    text-shadow: 0 0 10px rgba(0,212,170,0.5);
+}
+
+/* Nav label — tasks */
+.nav-label-item[data-target="tasks"] { border-color: rgba(0,255,136,0.4); }
+.nav-label-item[data-target="tasks"]:hover {
+    background: rgba(0,255,136,0.12);
+    border-color: var(--green);
+    box-shadow: 0 0 18px rgba(0,255,136,0.35);
+}
+.nav-label-item[data-target="tasks"] .nav-label-code { color: var(--green); }
+
+/* Nav label — search */
+.nav-label-item[data-target="search"] { border-color: rgba(255,68,136,0.4); }
+.nav-label-item[data-target="search"]:hover {
+    background: rgba(255,68,136,0.12);
+    border-color: #ff4488;
+    box-shadow: 0 0 18px rgba(255,68,136,0.35);
+}
+.nav-label-item[data-target="search"] .nav-label-code { color: #ff4488; }
