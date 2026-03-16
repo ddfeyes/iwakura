@@ -532,6 +532,49 @@ body::after {
 .status-toast-error { border-color: var(--red); color: var(--red); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* ── Health Bar (PSX blue-dot style) ──────────────────────── */
+.health-bar-card {
+    text-align: center;
+    padding: 18px 16px 14px;
+    border: 1px solid rgba(0,255,255,0.15);
+    background: rgba(10,10,26,0.85);
+}
+.health-bar-header {
+    display: flex; align-items: baseline; justify-content: center; gap: 12px;
+    margin-bottom: 10px;
+}
+.health-label {
+    font-family: var(--font-pixel); font-size: 18px;
+    letter-spacing: 0.15em; text-transform: uppercase;
+}
+.health-score {
+    font-family: var(--font-mono); font-size: 32px; font-weight: bold;
+}
+.health-dots {
+    display: flex; justify-content: center; gap: 4px;
+    margin: 8px 0;
+}
+.health-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    transition: background 0.4s, box-shadow 0.4s;
+}
+.health-dot.lit {
+    /* color set inline via JS */
+}
+.health-sub {
+    font-family: var(--font-mono); font-size: 9px; color: var(--dim);
+    letter-spacing: 0.2em; margin-top: 6px;
+}
+
+/* ── Nav Health Dot ───────────────────────────────────────── */
+.nav-health-dot {
+    display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%;
+    margin-left: 5px; vertical-align: middle;
+    transition: background 0.4s, box-shadow 0.4s;
+}
+
 /* ── Memory Screen ─────────────────────────────────────────── */
 .memory-layout {
     flex: 1; display: grid; grid-template-columns: 270px 1fr;

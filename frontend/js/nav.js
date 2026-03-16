@@ -33,6 +33,10 @@ class OrbitalNav {
 
         // Label elements
         this.labelEls = {};
+
+        // Health polling
+        this._healthInterval = null;
+        this._healthLabel = null;
     }
 
     // ── Init ──────────────────────────────────────────────────
@@ -68,6 +72,7 @@ class OrbitalNav {
         this._setupEvents();
         this.running = true;
         this._renderLoop();
+        this._startHealthPolling();
     }
 
     // ── Scene construction ────────────────────────────────────
@@ -363,14 +368,60 @@ class OrbitalNav {
         });
     }
 
+    // ── Health polling ──────────────────────────────────────
+
+    _startHealthPolling() {
+        this._fetchHealth();
+        this._healthInterval = setInterval(() => this._fetchHealth(), 60000);
+    }
+
+    async _fetchHealth() {
+        try {
+            const res = await fetch('/api/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            this._healthLabel = data.health_label || null;
+            this._updateHealthDot();
+        } catch (_) { /* silent */ }
+    }
+
+    _updateHealthDot() {
+        const labelEl = this.labelEls['status'];
+        if (!labelEl) return;
+        const colors = {
+            OPTIMAL:  '#00ffff',
+            STABLE:   '#00ff88',
+            DEGRADED: '#ff8800',
+            CRITICAL: '#ff0000',
+        };
+        let dot = labelEl.querySelector('.nav-health-dot');
+        if (!this._healthLabel) {
+            if (dot) dot.remove();
+            return;
+        }
+        const c = colors[this._healthLabel] || '#00ffff';
+        if (!dot) {
+            dot = document.createElement('span');
+            dot.className = 'nav-health-dot';
+            labelEl.appendChild(dot);
+        }
+        dot.style.background = c;
+        dot.style.boxShadow = '0 0 6px ' + c;
+    }
+
     stop() {
         this.running = false;
+        if (this._healthInterval) {
+            clearInterval(this._healthInterval);
+            this._healthInterval = null;
+        }
     }
 
     resume() {
         if (!this.running) {
             this.running = true;
             this._renderLoop();
+            this._startHealthPolling();
         }
     }
 }
