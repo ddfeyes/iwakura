@@ -766,6 +766,27 @@ mark.mem-kw-match {
     font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em;
 }
 
+/* Enriched context cards (issue #46) */
+.psyche-card {
+    padding: 8px 0 4px;
+    font-family: var(--font-mono); font-size: 12px;
+}
+.psyche-card-title {
+    font-family: var(--font-px); font-size: 7px;
+    color: var(--purple); letter-spacing: 0.3em;
+    margin-bottom: 6px;
+}
+.psyche-task-goal {
+    color: var(--cyan); padding: 2px 0;
+}
+.psyche-task-status {
+    color: var(--orange); font-size: 10px; opacity: 0.8;
+}
+.psyche-decision-line {
+    color: rgba(224,224,224,0.55); font-size: 11px;
+    padding: 1px 0; line-height: 1.4;
+}
+
 /* Legacy card styles kept for backward compatibility */
 .psy-card {
     background: rgba(15,15,53,0.6);
