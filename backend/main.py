@@ -131,7 +131,11 @@ def gen_file_code() -> str:
 @app.websocket("/ws/chat")
 async def ws_chat(websocket: WebSocket):
     await websocket.accept()
-    logger.info("WebSocket connected")
+    topic_id = websocket.query_params.get("topic_id")
+    session_key = None
+    if topic_id:
+        session_key = f"agent:lain:telegram:group:-1003844426893:topic:{topic_id}"
+    logger.info(f"WebSocket connected (topic_id={topic_id})")
     try:
         while True:
             raw = await websocket.receive_text()
@@ -164,7 +168,7 @@ async def ws_chat(websocket: WebSocket):
                 response_tokens: list[str] = []
 
                 # Stream tokens to the frontend line by line
-                async for chunk in gateway.stream_message(text):
+                async for chunk in gateway.stream_message(text, session_key=session_key):
                     token_count += 1
                     response_tokens.append(chunk)
                     if token_count == 1:

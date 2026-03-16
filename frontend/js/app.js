@@ -8,6 +8,7 @@
 
     // ── State ─────────────────────────────────────────────────
     let currentScreen = 'boot';
+    let currentTopicId = 1635;
     let orbNav        = null;
     let lainChar      = null;   // LainCharacter instance
     let chat          = null;
@@ -17,7 +18,19 @@
     let tasksDash     = null;
     let searchScreen  = null;
     let wiredScreen   = null;
-    let lainChar      = null;
+
+    // ── Navigation routing ──────────────────────────────────
+    const ROUTE_MAP = {
+        lain001: { screen: "diary",  topicId: 1635, label: "LAIN // 001 \u2014 PSYCHE" },
+        lain002: { screen: "status", topicId: null,  label: "LAIN // 002 \u2014 DASHBOARD" },
+        lain003: { screen: "diary",  topicId: 829,   label: "LAIN // 003 \u2014 IWAKURA" },
+        lain004: { screen: "diary",  topicId: 1657,  label: "LAIN // 004 \u2014 NAVI" },
+        lain005: { screen: "status", topicId: null,   label: "LAIN // 005 \u2014 STATUS" },
+        lain006: { screen: "memory", topicId: null,   label: "LAIN // 006 \u2014 MEMORY" },
+        lain007: { screen: "diary",  topicId: 1264,  label: "LAIN // 007 \u2014 RESEARCH" },
+    };
+
+    window.getCurrentTopicId = () => currentTopicId;
 
     // ── DOM refs ──────────────────────────────────────────────
     const screens = {
@@ -185,7 +198,17 @@
         if (!orbNav) {
             orbNav = new OrbitalNav(canvas, labelsDiv, (id) => {
                 if (lainChar) lainChar.onNavigate();
-                showScreen(id);
+                const route = ROUTE_MAP[id];
+                if (route) {
+                    currentTopicId = route.topicId;
+                    showScreen(route.screen);
+                    if (route.screen === 'diary') {
+                        const lbl = document.getElementById('diary-level-label');
+                        if (lbl) lbl.textContent = route.label;
+                    }
+                } else {
+                    showScreen(id);
+                }
             });
             // Wire nav hover → character reactions
             orbNav.onHoverChange = (navId) => {
@@ -204,15 +227,6 @@
         } else {
             orbNav.resume();
             if (lainChar) lainChar.resume();
-        }
-
-        // Init Lain character once
-        if (!lainChar && window.LainCharacter) {
-            const charContainer = document.getElementById('lain-char-container');
-            if (charContainer) {
-                lainChar = new LainCharacter();
-                lainChar.init(charContainer);
-            }
         }
 
         // Load session info for footer
