@@ -6,12 +6,13 @@
     <title>IWAKURA // WIRED ACCESS POINT</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/psx.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
+<body class="scanlines">
 
-<!-- CRT Scanlines overlay -->
-<div id="scanlines"></div>
+<!-- Background data rain canvas injected by data-rain.js -->
+<!-- Scanlines handled by body.scanlines::before (psx.css) -->
 
 <!-- ── BOOT SCREEN ─────────────────────────────────────── -->
 <div id="screen-boot" class="screen active">
@@ -162,6 +163,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/data-rain.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/effects.js"></script>
 <script src="js/chat.js"></script>
