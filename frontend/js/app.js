@@ -14,6 +14,7 @@
     let psyche        = null;
     let statusDash    = null;
     let tasksDash     = null;
+    let searchScreen  = null;
 
     // ── DOM refs ──────────────────────────────────────────────
     const screens = {
@@ -24,6 +25,7 @@
         memory: document.getElementById('screen-memory'),
         psyche: document.getElementById('screen-psyche'),
         tasks:  document.getElementById('screen-tasks'),
+        search: document.getElementById('screen-search'),
     };
 
     // ── Screen management ─────────────────────────────────────
@@ -52,6 +54,7 @@
             if (name === 'memory') initMemory();
             if (name === 'psyche') loadPsyche();
             if (name === 'tasks')  loadTasks();
+            if (name === 'search') initSearch();
 
             // Stop hub Three.js when leaving
             if (name !== 'hub' && orbNav) orbNav.stop();
@@ -67,6 +70,9 @@
 
             // Stop tasks auto-refresh when leaving tasks
             if (name !== 'tasks' && tasksDash) tasksDash.stop();
+
+            // Stop search debounce when leaving search
+            if (name !== 'search' && searchScreen) searchScreen.stop();
 
             // Unread badge: mark diary active/inactive
             if (chat) {
@@ -297,6 +303,16 @@
         tasksDash.start();
     }
 
+    // ── Search Screen ─────────────────────────────────────────
+
+    function initSearch() {
+        if (!searchScreen) {
+            searchScreen = new SearchScreen();
+            searchScreen.init();
+        }
+        searchScreen.focus();
+    }
+
     // ── Back buttons ──────────────────────────────────────────
 
     document.querySelectorAll('.back-btn').forEach(btn => {
@@ -403,7 +419,7 @@
     // Expose for debugging and hotkeys
     window.iwakura = {
         showScreen,
-        loadStatus, initMemory, loadPsyche, loadTasks,
+        loadStatus, initMemory, loadPsyche, loadTasks, initSearch,
         getPsyche: () => psyche,
         currentScreen: () => currentScreen,
         clearDiaryUnread: () => { if (chat) chat.clearUnread(); },

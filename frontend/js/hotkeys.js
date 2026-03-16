@@ -46,7 +46,7 @@ class IwakuraHotkeys {
 
         if (this._isTyping()) return;
 
-        const screenMap = { '1': 'diary', '2': 'status', '3': 'memory', '4': 'psyche', '5': 'tasks' };
+        const screenMap = { '1': 'diary', '2': 'status', '3': 'memory', '4': 'psyche', '5': 'tasks', '6': 'search' };
 
         if (screenMap[e.key]) {
             if (window.audio) window.audio.playClick();
@@ -75,27 +75,23 @@ class IwakuraHotkeys {
             return;
         }
 
+        // Global `/` → navigate to SEARCH screen and focus input
+        if (e.key === '/') {
+            e.preventDefault();
+            if (window.audio) window.audio.playClick();
+            this._showScreen('search');
+            setTimeout(() => {
+                const input = document.getElementById('search-input');
+                if (input) input.focus();
+            }, 50);
+            return;
+        }
+
         // Diary-only shortcuts
         if (this._currentScreen() === 'diary') {
-            if (e.key === '/') {
-                e.preventDefault();
-                const input = document.getElementById('diary-input');
-                if (input) input.focus();
-                return;
-            }
             if (e.key === 'r') {
                 const msgs = document.getElementById('diary-messages');
                 if (msgs) msgs.scrollTop = msgs.scrollHeight;
-                return;
-            }
-        }
-
-        // Memory-only shortcuts
-        if (this._currentScreen() === 'memory') {
-            if (e.key === '/') {
-                e.preventDefault();
-                const input = document.getElementById('mem-search');
-                if (input) input.focus();
                 return;
             }
         }
