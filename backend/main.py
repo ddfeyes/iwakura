@@ -198,6 +198,12 @@ async def root():
     return HTMLResponse(index.read_text())
 
 
+@app.get("/diary")
+async def diary():
+    page = FRONTEND_DIR / "diary.html"
+    return HTMLResponse(page.read_text())
+
+
 @app.get("/{path:path}")
 async def spa_fallback(path: str):
     # Try to serve static file

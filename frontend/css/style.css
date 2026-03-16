@@ -243,6 +243,8 @@ body::after {
     font-family: var(--font-mono); font-size: 10px;
 }
 .hub-sep { flex: 1; }
+.hub-diary-link { text-decoration: none; opacity: 0.7; transition: opacity 0.2s; }
+.hub-diary-link:hover { opacity: 1; text-decoration: underline; }
 
 /* ── Shared Screen Header ──────────────────────────────────── */
 .screen-header {

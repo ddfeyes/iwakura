@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIARY // LAIN — DIRECT LINE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/psx.css">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%; height: 100%;
+            background: var(--color-bg);
+            color: var(--color-text);
+            font-family: 'Share Tech Mono', monospace;
+            overflow: hidden;
+            cursor: crosshair;
+        }
+
+        /* CRT vignette */
+        body::after {
+            content: '';
+            position: fixed; inset: 0;
+            background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%);
+            pointer-events: none;
+            z-index: 9997;
+        }
+
+        /* ── Layout ─────────────────────────────────────────── */
+        #diary-wrap {
+            position: fixed; inset: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+        }
+
+        /* ── Header ─────────────────────────────────────────── */
+        .diary-header {
+            flex-shrink: 0;
+            padding: 12px 20px 0;
+        }
+
+        .diary-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+        }
+
+        .diary-title {
+            font-family: 'VT323', monospace;
+            font-size: 28px;
+            color: var(--color-accent-orange);
+            text-shadow: 0 0 12px rgba(255,140,0,0.6);
+            letter-spacing: 0.15em;
+        }
+
+        .diary-site {
+            font-size: 11px;
+            color: var(--color-accent-cyan);
+            letter-spacing: 0.2em;
+        }
+
+        .diary-back {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            color: var(--color-accent-orange);
+            background: transparent;
+            border: 1px solid rgba(255,140,0,0.4);
+            padding: 4px 10px;
+            cursor: pointer;
+            letter-spacing: 0.1em;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .diary-back:hover {
+            border-color: var(--color-accent-orange);
+            box-shadow: 0 0 8px rgba(255,140,0,0.3);
+        }
+
+        /* connection status */
+        #conn-status {
+            font-size: 10px;
+            letter-spacing: 0.15em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #conn-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: #ff4455;
+            box-shadow: 0 0 6px #ff4455;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+        #conn-dot.connected {
+            background: #00ff88;
+            box-shadow: 0 0 6px #00ff88;
+        }
+        #conn-label { color: var(--color-text); opacity: 0.7; }
+
+        /* ── Messages area ──────────────────────────────────── */
+        #diary-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,140,0,0.3) transparent;
+        }
+        #diary-messages::-webkit-scrollbar { width: 4px; }
+        #diary-messages::-webkit-scrollbar-track { background: transparent; }
+        #diary-messages::-webkit-scrollbar-thumb { background: rgba(255,140,0,0.3); border-radius: 2px; }
+
+        /* Intro message */
+        .intro-msg {
+            font-size: 11px;
+            color: var(--color-accent-cyan);
+            opacity: 0.6;
+            letter-spacing: 0.1em;
+            padding: 4px 0;
+        }
+
+        /* Chat messages */
+        .chat-msg { display: flex; flex-direction: column; gap: 3px; }
+
+        .msg-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 11px;
+            opacity: 0.75;
+        }
+
+        .msg-code { letter-spacing: 0.1em; }
+        .msg-code.orange { color: var(--color-accent-orange); }
+        .msg-code.cyan   { color: var(--color-accent-cyan); }
+
+        .msg-from { letter-spacing: 0.15em; font-size: 10px; }
+        .msg-from.orange { color: var(--color-accent-orange); }
+        .msg-from.purple { color: var(--color-accent-purple); }
+
+        .msg-time { color: var(--color-accent-cyan); font-size: 10px; margin-left: auto; opacity: 0.6; }
+
+        .msg-body {
+            font-size: 14px;
+            line-height: 1.5;
+            padding: 2px 0 2px 18px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .msg-body.user-msg {
+            color: var(--color-text);
+            opacity: 0.9;
+        }
+        .msg-body.user-msg::before {
+            content: '> ';
+            color: var(--color-accent-orange);
+        }
+        .msg-body.lain-msg {
+            color: var(--color-text);
+        }
+        .msg-body.error-msg {
+            color: #ff4455;
+            font-size: 12px;
+        }
+        .msg-body.sys-msg {
+            color: var(--color-accent-cyan);
+            font-size: 11px;
+            opacity: 0.7;
+        }
+
+        /* Typewriter cursor */
+        .tw-cursor {
+            display: inline-block;
+            width: 8px; height: 14px;
+            background: var(--color-accent-cyan);
+            opacity: 0.8;
+            animation: blink 0.7s step-end infinite;
+            vertical-align: text-bottom;
+            margin-left: 1px;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .msg-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            padding: 4px 0 0 18px;
+        }
+        .tag {
+            font-size: 10px;
+            color: #d2b980;
+            border: 1px solid rgba(210,185,128,0.4);
+            padding: 1px 7px;
+            letter-spacing: 0.1em;
+        }
+
+        /* Thinking indicator */
+        .thinking-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 0 6px 18px;
+            font-size: 11px;
+            color: var(--color-accent-purple);
+            opacity: 0.7;
+        }
+        .tdots { display: flex; gap: 5px; }
+        .tdot {
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: var(--color-accent-purple);
+            animation: tdot-pulse 1.2s ease-in-out infinite;
+        }
+        .tdot:nth-child(2) { animation-delay: 0.2s; }
+        .tdot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes tdot-pulse {
+            0%, 80%, 100% { opacity: 0.2; transform: scale(0.85); }
+            40%            { opacity: 1.0; transform: scale(1.15); }
+        }
+
+        /* ── Tags bar ───────────────────────────────────────── */
+        #diary-tags {
+            flex-shrink: 0;
+            padding: 4px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            min-height: 24px;
+        }
+
+        /* ── Input row ──────────────────────────────────────── */
+        .diary-input-area {
+            flex-shrink: 0;
+            padding: 0 20px 16px;
+        }
+
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-top: 1px solid var(--color-accent-orange);
+            padding-top: 10px;
+        }
+
+        .prompt-sym {
+            color: var(--color-accent-orange);
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        #diary-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--color-text);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            letter-spacing: 0.05em;
+            caret-color: var(--color-accent-orange);
+        }
+        #diary-input::placeholder { color: rgba(224,224,224,0.25); }
+
+        #diary-send {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            letter-spacing: 0.15em;
+            color: var(--color-accent-orange);
+            background: transparent;
+            border: 1px solid rgba(255,140,0,0.5);
+            padding: 4px 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            flex-shrink: 0;
+        }
+        #diary-send:hover:not(:disabled) {
+            border-color: var(--color-accent-orange);
+            box-shadow: 0 0 8px rgba(255,140,0,0.3);
+        }
+        #diary-send:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        /* ── Status bar ─────────────────────────────────────── */
+        .diary-status-bar {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 6px 20px 10px;
+            font-size: 10px;
+            letter-spacing: 0.12em;
+            border-top: 1px solid rgba(255,140,0,0.15);
+        }
+
+        .ws-connected    { color: #00ff88; }
+        .ws-disconnected { color: #ff4455; }
+
+        .session-label { color: rgba(224,224,224,0.35); }
+
+        #diary-reset {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 0.1em;
+            color: rgba(224,224,224,0.35);
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 2px 8px;
+            cursor: pointer;
+            margin-left: auto;
+        }
+        #diary-reset:hover { color: var(--color-text); border-color: rgba(255,255,255,0.3); }
+    </style>
+</head>
+<body class="scanlines">
+
+<div id="diary-wrap">
+
+    <!-- Header -->
+    <div class="diary-header">
+        <hr class="hr-orange">
+        <div class="diary-title-row">
+            <a href="/" class="diary-back">◀ RETURN</a>
+            <div>
+                <span class="diary-title font-psx">DIARY</span>
+                <span class="diary-site"> — Lda020 / Site A / level. 10</span>
+            </div>
+            <div id="conn-status">
+                <div id="conn-dot"></div>
+                <span id="conn-label">DISCONNECTED</span>
+            </div>
+        </div>
+        <hr class="hr-orange">
+    </div>
+
+    <!-- Messages -->
+    <div id="diary-messages">
+        <div class="intro-msg">// DIRECT LINE ESTABLISHED — TRANSMIT WHEN READY</div>
+    </div>
+
+    <!-- Tag preview -->
+    <div id="diary-tags"></div>
+
+    <!-- Input -->
+    <div class="diary-input-area">
+        <div class="input-row">
+            <span class="prompt-sym">▶</span>
+            <input type="text" id="diary-input"
+                   placeholder="TRANSMIT MESSAGE..."
+                   autocomplete="off" spellcheck="false">
+            <button id="diary-send" disabled>SEND</button>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="diary-status-bar">
+        <span id="diary-ws-status" class="ws-disconnected">● DISCONNECTED</span>
+        <span id="diary-session-label" class="session-label">SESSION: --</span>
+        <button id="diary-reset">RESET SESSION</button>
+    </div>
+
+</div>
+
+<script src="js/diary.js"></script>
+
+</body>
+</html>
