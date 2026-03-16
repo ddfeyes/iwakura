@@ -78,24 +78,61 @@ async def get_ao_sessions() -> list[dict]:
 
 
 async def get_openclaw_crons() -> list[dict]:
-    """Fetch cron jobs from the OpenClaw gateway API."""
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get("http://127.0.0.1:18789/api/crons")
-            resp.raise_for_status()
-            data = resp.json()
-            jobs = []
-            for item in (data if isinstance(data, list) else data.get("jobs", [])):
-                jobs.append({
+    """Fetch cron jobs via openclaw CLI (gateway /api/crons returns 404)."""
+    # Try openclaw cron list --json first
+    raw = await _run(["openclaw", "cron", "list", "--json"])
+    if raw:
+        try:
+            data = json.loads(raw)
+            jobs = data if isinstance(data, list) else data.get("jobs", [])
+            result = []
+            for item in jobs:
+                result.append({
                     "name": item.get("name", ""),
-                    "schedule": item.get("schedule", ""),
+                    "schedule": str(item.get("schedule", "")),
                     "enabled": item.get("enabled", True),
-                    "last_run": item.get("last_run", ""),
+                    "last_run": item.get("lastRun", item.get("last_run", "")),
                 })
-            return jobs
-    except Exception:
-        return []
+            return result
+        except Exception:
+            pass
+
+    # Fallback: parse text output
+    raw_text = await _run(["openclaw", "cron", "list"])
+    if raw_text:
+        result = []
+        for line in raw_text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            result.append({
+                "name": line[:80],
+                "schedule": "",
+                "enabled": True,
+                "last_run": "",
+            })
+        if result:
+            return result
+
+    # Fallback: read ~/.openclaw/openclaw.json
+    cfg_path = pathlib.Path.home() / ".openclaw" / "openclaw.json"
+    if cfg_path.exists():
+        try:
+            cfg = json.loads(cfg_path.read_text())
+            jobs = cfg.get("crons", cfg.get("jobs", []))
+            result = []
+            for item in (jobs if isinstance(jobs, list) else []):
+                result.append({
+                    "name": item.get("name", ""),
+                    "schedule": str(item.get("schedule", "")),
+                    "enabled": item.get("enabled", True),
+                    "last_run": item.get("lastRun", item.get("last_run", "")),
+                })
+            return result
+        except Exception:
+            pass
+
+    return []
 
 
 async def get_cron_status() -> list[dict]:
