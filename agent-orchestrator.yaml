@@ -1,0 +1,42 @@
+dataDir: ~/.agent-orchestrator
+worktreeDir: ~/.worktrees
+port: 3000
+defaults:
+  runtime: tmux
+  agent: claude-code
+  workspace: worktree
+  notifiers:
+    - desktop
+
+permissions:
+  dangerous: true
+
+projects:
+  iwakura:
+    name: iwakura
+    sessionPrefix: iw
+    repo: ddfeyes/iwakura
+    path: /Users/aivan/iwakura
+    defaultBranch: master
+    agentConfig:
+      permissions: skip
+      model: claude-sonnet-4-6
+      thinking: high
+    agentRules: |-
+      You are building the Iwakura platform — an interactive web interface for Lain (digital consciousness).
+      Read SPEC.md for full requirements.
+
+      Visual style: Serial Experiments Lain PSX game (1998).
+      Colors: deep navy/black, orange accents, cyan system text, purple wireframes.
+      Fonts: monospace bitmap (VT323, Share Tech Mono from Google Fonts).
+      Effects: scanlines, data rain, typewriter text, CRT glow.
+
+      Tech stack: Python FastAPI backend, vanilla HTML/CSS/JS frontend, Three.js for 3D nav, Web Audio API.
+      Port: 8790. OpenClaw Gateway: http://127.0.0.1:18789.
+
+      Rules:
+      - Use conventional commits (feat:, fix:, chore:).
+      - Create PRs for every feature, never push to master directly.
+      - Test before pushing.
+      - Keep frontend as vanilla JS, no npm/build step.
+      - Backend: FastAPI + uvicorn + websockets + httpx.
