@@ -31,6 +31,7 @@ class OrbitalNav {
             { id: 'psyche', label: 'PSYCHE', color: 0x4488ff, baseAngle: Math.PI * 1.2 },
             { id: 'tasks',  label: 'TASKS',  color: 0x00ff88, baseAngle: Math.PI * 1.6 },
             { id: 'search', label: 'SEARCH', color: 0xff4488, baseAngle: Math.PI * 2.0 },
+            { id: 'wired',  label: 'WIRED',  color: 0xffcc00, baseAngle: Math.PI * 2.4 },
         ];
 
         // Label elements
