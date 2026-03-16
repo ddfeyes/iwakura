@@ -45,6 +45,24 @@
             }
         }
 
+        _renderMood(mood) {
+            if (!mood) return '';
+            const { label, intensity, signals, color } = mood;
+            const bars = Math.round(intensity / 10);
+            const barHtml = '█'.repeat(bars) + '░'.repeat(10 - bars);
+            return `
+                <div class="mood-indicator" style="--mood-color:${esc(color)}">
+                    <div class="mood-header">
+                        <span class="mood-pulse"></span>
+                        <span class="mood-label" style="color:${esc(color)}">${esc(label)}</span>
+                        <span class="mood-intensity">${esc(String(intensity))}%</span>
+                    </div>
+                    <div class="mood-bar">${barHtml}</div>
+                    <div class="mood-signals">${(signals || []).map(s => `<span>${esc(s)}</span>`).join('')}</div>
+                </div>
+            `;
+        }
+
         _render(data) {
             const {
                 state = {},
@@ -53,9 +71,13 @@
                 session_id,
                 soul_excerpt = '',
                 heartbeat = '',
+                mood = null,
             } = data;
 
             let html = '';
+
+            // ── Mood Indicator ──
+            html += this._renderMood(mood);
 
             // ── Header bar ──
             const ts = new Date().toISOString().slice(11, 19) + 'Z';

@@ -146,6 +146,44 @@ async def api_memory_file(filename: str):
     return JSONResponse({"name": filename, "content": content, "rendered": rendered})
 
 
+def _derive_mood(state: dict, initiative: dict, think: dict, think_delta: dict) -> dict:
+    signals = []
+    score = 0
+
+    active_tasks = [t for t in state.get("tasks", []) if isinstance(t, dict) and t.get("status") == "in_progress"]
+    if active_tasks:
+        score += 30
+        signals.append(f"{len(active_tasks)} task(s) active")
+
+    if think_delta and think_delta.get("cycles", 0) > 0:
+        score += 25
+        signals.append(f"think cycles: {think_delta['cycles']}")
+
+    msgs_today = initiative.get("messages_sent_today", 0)
+    if msgs_today > 3:
+        score += 20
+        signals.append(f"{msgs_today} messages sent today")
+    elif msgs_today > 0:
+        score += 10
+        signals.append(f"{msgs_today} message(s) today")
+
+    failed = [t for t in state.get("tasks", []) if isinstance(t, dict) and t.get("status") == "failed"]
+    if failed:
+        score -= 20
+        signals.append(f"{len(failed)} failed task(s)")
+
+    if score >= 60:
+        return {"label": "FOCUSED", "intensity": min(score, 100), "signals": signals, "color": "#ff8c00"}
+    elif score >= 35:
+        return {"label": "RESONANT", "intensity": score, "signals": signals, "color": "#00ff88"}
+    elif score >= 15:
+        return {"label": "DEEP", "intensity": score, "signals": signals, "color": "#00d4aa"}
+    elif failed:
+        return {"label": "ALERT", "intensity": max(30, abs(score)), "signals": signals, "color": "#ff4444"}
+    else:
+        return {"label": "IDLE", "intensity": 10, "signals": signals or ["no recent activity"], "color": "#8b7cc8"}
+
+
 @app.get("/api/psyche")
 async def api_psyche():
     data = {}
@@ -196,6 +234,14 @@ async def api_psyche():
 
     # session info
     data["session_id"] = gateway.get_current_session_id()
+
+    # mood indicator
+    data["mood"] = _derive_mood(
+        data.get("state", {}),
+        data.get("initiative", {}),
+        data.get("think", {}),
+        data.get("think_delta", {}),
+    )
 
     return JSONResponse(data)
 
