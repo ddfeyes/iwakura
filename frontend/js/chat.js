@@ -40,6 +40,7 @@ class IwakuraChat {
         this.container = container;
         this._restoreHistory();
         this._connect();
+        this._initSessionBar();
 
         // Auto-scroll: track when user scrolls up
         if (container) {
@@ -77,8 +78,26 @@ class IwakuraChat {
     }
 
     resetSession() {
-        if (!this.connected) return;
-        this._send({ type: 'reset_session' });
+        fetch('/api/session/reset', { method: 'POST' }).catch(() => {});
+        this._addSysMsg('SESSION RESET — NEW CONNECTION ESTABLISHED');
+        this._addSepMsg('NEW SESSION');
+        if (this.onSessionChange) this.onSessionChange(null);
+        // Reconnect WebSocket
+        if (this.ws) { this.ws.onclose = null; this.ws.close(); }
+        this.connected = false;
+        this._stopPing();
+        if (this.onStatusChange) this.onStatusChange(false);
+        this.reconnectMs = 2000;
+        this._connect();
+    }
+
+    _initSessionBar() {
+        // Load current session from REST and surface it via onSessionChange
+        fetch('/api/session').then(r => r.json()).then(data => {
+            if (data.sessionId && this.onSessionChange) {
+                this.onSessionChange(data.sessionId);
+            }
+        }).catch(() => {});
     }
 
     // ── Connection ────────────────────────────────────────────
