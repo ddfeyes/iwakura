@@ -7,8 +7,8 @@ class IwakuraAudio {
     constructor() {
         this.ctx = null;
         this.masterGain = null;
-        this.volume = 0.3;
-        this.muted = false;
+        this.volume = parseFloat(localStorage.getItem('iwakura-audio-volume') ?? '0.7');
+        this.muted = localStorage.getItem('iwakura-muted') === 'true';
         this.started = false;
     }
 
@@ -16,7 +16,7 @@ class IwakuraAudio {
         try {
             this.ctx = new (window.AudioContext || window.webkitAudioContext)();
             this.masterGain = this.ctx.createGain();
-            this.masterGain.gain.value = this.volume;
+            this.masterGain.gain.value = this.muted ? 0 : this.volume;
             this.masterGain.connect(this.ctx.destination);
             this._buildAmbient();
             this.started = true;
@@ -158,17 +158,59 @@ class IwakuraAudio {
         src.start(now);
     }
 
+    playGlitch() {
+        if (!this.ctx || this.muted) return;
+        const now = this.ctx.currentTime;
+
+        // White noise burst (0.1s)
+        const samples = Math.floor(this.ctx.sampleRate * 0.1);
+        const buf = this.ctx.createBuffer(1, samples, this.ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < samples; i++) d[i] = Math.random() * 2 - 1;
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buf;
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.25, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'highpass';
+        noiseFilter.frequency.value = 2000;
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.masterGain);
+        noise.start(now);
+
+        // Pitch-shifted click (descending sweep)
+        const osc = this.ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1800, now);
+        osc.frequency.exponentialRampToValueAtTime(120, now + 0.08);
+
+        const oscGain = this.ctx.createGain();
+        oscGain.gain.setValueAtTime(0.1, now);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+        osc.connect(oscGain);
+        oscGain.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + 0.1);
+    }
+
     playBeep() {
         if (!this.ctx || this.muted) return;
         const now = this.ctx.currentTime;
 
         const osc = this.ctx.createOscillator();
         osc.type = 'sine';
-        osc.frequency.value = 1100;
+        osc.frequency.value = 880;
 
         const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0.04, now);
-        gain.gain.setValueAtTime(0.04, now + 0.08);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.setValueAtTime(0.08, now + 0.08);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
 
         osc.connect(gain);
@@ -181,34 +223,38 @@ class IwakuraAudio {
         if (!this.ctx || this.muted) return;
         const now = this.ctx.currentTime;
 
-        // Rising tone
+        // Short static burst first
+        this.playStatic(0.3);
+
+        // Low sine sweep 80→40 Hz over 1s (starts after static)
         const osc = this.ctx.createOscillator();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(80, now);
-        osc.frequency.exponentialRampToValueAtTime(320, now + 1.2);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(80, now + 0.1);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 1.1);
 
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(400, now);
-        filter.frequency.exponentialRampToValueAtTime(2000, now + 1.2);
+        filter.frequency.value = 300;
+        filter.Q.value = 2;
 
         const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.08, now + 0.3);
+        gain.gain.setValueAtTime(0, now + 0.1);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.4);
         gain.gain.setValueAtTime(0.08, now + 0.9);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.3);
 
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
-        osc.start(now);
-        osc.stop(now + 1.6);
+        osc.start(now + 0.1);
+        osc.stop(now + 1.4);
     }
 
     // ── Controls ───────────────────────────────────────────────
 
     setVolume(v) {
         this.volume = v / 100;
+        localStorage.setItem('iwakura-audio-volume', this.volume);
         if (this.masterGain) {
             this.masterGain.gain.value = this.muted ? 0 : this.volume;
         }
@@ -216,6 +262,7 @@ class IwakuraAudio {
 
     toggleMute() {
         this.muted = !this.muted;
+        localStorage.setItem('iwakura-muted', this.muted);
         if (this.masterGain) {
             this.masterGain.gain.value = this.muted ? 0 : this.volume;
         }
@@ -226,6 +273,11 @@ class IwakuraAudio {
         if (this.ctx && this.ctx.state === 'suspended') {
             this.ctx.resume();
         }
+    }
+
+    // Returns the persisted volume as a 0–100 integer for slider initialization
+    getVolumePercent() {
+        return Math.round(this.volume * 100);
     }
 }
 
