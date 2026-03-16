@@ -66,6 +66,10 @@
             <div class="nav-label-code">Sch011</div>
             <div class="nav-label-name">SEARCH</div>
         </div>
+        <div class="nav-label-item" data-target="wired">
+            <div class="nav-label-code">Wrd001</div>
+            <div class="nav-label-name">WIRED</div>
+        </div>
     </div>
 
     <div class="hub-ui">
@@ -181,6 +185,21 @@
     </div>
 </div>
 
+<!-- ── WIRED SCREEN ───────────────────────────────────────── -->
+<div id="screen-wired" class="screen">
+    <div class="screen-header">
+        <button class="back-btn" data-target="hub">◀ RETURN</button>
+        <span class="screen-title" data-glitch>WIRED // ACTIVITY FEED</span>
+        <span class="screen-code green">Wrd001</span>
+        <span id="wired-live-indicator" class="wired-live-off">○ OFFLINE</span>
+    </div>
+    <div id="wired-feed" class="wired-feed"></div>
+    <div class="wired-status-bar">
+        <span id="wired-event-count" class="dim">0 events</span>
+        <span id="wired-last-update" class="dim">--</span>
+    </div>
+</div>
+
 <!-- ── SEARCH SCREEN ──────────────────────────────────── -->
 <div id="screen-search" class="screen">
     <div class="screen-header">
@@ -230,6 +249,7 @@
                 <tr><td class="green">4</td><td>Go to PSYCHE</td></tr>
                 <tr><td class="green">5</td><td>Go to TASKS</td></tr>
                 <tr><td class="green">6</td><td>Go to SEARCH</td></tr>
+                <tr><td class="green">7</td><td>Go to WIRED</td></tr>
                 <tr><td class="green">/</td><td>Open SEARCH from anywhere</td></tr>
                 <tr><td class="green">Esc</td><td>Return to HUB</td></tr>
                 <tr><td class="green">m</td><td>Toggle mute</td></tr>
@@ -256,6 +276,7 @@
 <script src="js/status.js"></script>
 <script src="js/tasks.js"></script>
 <script src="js/search.js"></script>
+<script src="js/wired.js"></script>
 <script src="js/hotkeys.js"></script>
 <script src="js/app.js"></script>
 </body>

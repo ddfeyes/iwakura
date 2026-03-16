@@ -1,14 +1,16 @@
 """Iwakura Platform Backend — FastAPI + WebSocket + OpenClaw proxy."""
+import asyncio
 import json
 import logging
 import pathlib
 import random
 import time
+import uuid
 from datetime import datetime, timedelta
 import yaml
 import markdown as md_lib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.websockets import WebSocketState
 
 import gateway
@@ -553,6 +555,135 @@ async def api_search(q: str = ""):
 @app.get("/api/session")
 async def api_session():
     return JSONResponse({"sessionId": gateway.get_current_session_id()})
+
+
+# ── WIRED feed ────────────────────────────────────────────────────────────────
+
+async def get_wired_events() -> list[dict]:
+    """Aggregate events from all sources for the WIRED activity feed."""
+    events: list[dict] = []
+    now = datetime.utcnow()
+
+    # DIARY: last 10 messages
+    diary = load_diary_history()
+    for entry in diary[-10:]:
+        role = entry.get("role", "user")
+        prefix = "Human: " if role == "user" else "Lain: "
+        text = entry.get("text", "")[:80]
+        events.append({
+            "id": entry.get("code", str(uuid.uuid4())),
+            "ts": entry.get("timestamp", now.isoformat() + "Z"),
+            "source": "DIARY",
+            "level": "info",
+            "text": prefix + text,
+            "detail": entry.get("code", ""),
+        })
+
+    # AO sessions + MEMORY files + CRON jobs + SYSTEM in parallel
+    ao_result, openclaw_crons, mem_usage, docker_containers = await asyncio.gather(
+        sys_status.get_ao_sessions(),
+        sys_status.get_openclaw_crons(),
+        sys_status.get_memory_usage(),
+        sys_status.get_docker_status(),
+    )
+
+    # AO sessions
+    for s in ao_result.get("sessions", []):
+        age = s.get("age_seconds") or 0
+        status = s.get("status", "idle")
+        ts = (now - timedelta(seconds=age)).isoformat() + "Z"
+        events.append({
+            "id": f"ao-{s['name']}",
+            "ts": ts,
+            "source": "AO",
+            "level": "info" if status == "active" else "warn",
+            "text": f"Session {s['name']} — {status.upper()}",
+            "detail": (s.get("last_line") or "")[:80],
+        })
+
+    # MEMORY files modified in last 24h
+    cutoff = now - timedelta(hours=24)
+    if LAIN_MEMORY.exists():
+        for f in LAIN_MEMORY.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime)
+                if mtime >= cutoff:
+                    events.append({
+                        "id": f"mem-{f.name}-{int(mtime.timestamp())}",
+                        "ts": mtime.isoformat() + "Z",
+                        "source": "MEMORY",
+                        "level": "info",
+                        "text": f"File modified: {f.name}",
+                        "detail": f"{f.stat().st_size} bytes",
+                    })
+            except Exception:
+                pass
+
+    # CRON: openclaw cron jobs
+    for job in openclaw_crons:
+        last_run = job.get("last_run") or ""
+        events.append({
+            "id": f"cron-{job.get('name', '')}",
+            "ts": last_run if last_run else now.isoformat() + "Z",
+            "source": "CRON",
+            "level": "info" if job.get("enabled", True) else "warn",
+            "text": f"Cron: {job.get('name', '')[:60]}",
+            "detail": job.get("schedule", ""),
+        })
+
+    # SYSTEM: memory
+    mem_pct = mem_usage.get("percent", 0)
+    mem_level = "alert" if mem_pct > 85 else ("warn" if mem_pct > 70 else "info")
+    events.append({
+        "id": f"sys-mem",
+        "ts": now.isoformat() + "Z",
+        "source": "SYSTEM",
+        "level": mem_level,
+        "text": f"Memory: {mem_pct}% used — {mem_usage.get('used', '?')} / {mem_usage.get('total', '?')}",
+        "detail": f"Free: {mem_usage.get('free', '?')}",
+    })
+
+    # SYSTEM: docker containers
+    for c in docker_containers:
+        is_up = "Up" in c.get("status", "")
+        events.append({
+            "id": f"docker-{c.get('name', '')}",
+            "ts": now.isoformat() + "Z",
+            "source": "SYSTEM",
+            "level": "info" if is_up else "warn",
+            "text": f"Container {c.get('name', '')} — {'UP' if is_up else 'DOWN'}",
+            "detail": c.get("status", "")[:60],
+        })
+
+    events.sort(key=lambda e: e["ts"], reverse=True)
+    return events[:50]
+
+
+@app.get("/api/wired")
+async def api_wired():
+    events = await get_wired_events()
+    return JSONResponse({"events": events, "total": len(events)})
+
+
+@app.get("/api/wired/stream")
+async def api_wired_stream():
+    async def generator():
+        try:
+            while True:
+                events = await get_wired_events()
+                data = json.dumps({"events": events})
+                yield f"data: {data}\n\n"
+                await asyncio.sleep(5)
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ── Static files + SPA fallback ───────────────────────────────────────────────
