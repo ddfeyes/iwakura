@@ -176,6 +176,18 @@ class LainCharacter {
         this._ctx.save();
         this._ctx.translate(0, floatY);
         this._ctx.drawImage(frameCanvas, 0, 0);
+
+        // Remove black background from PSX sprites (make transparent)
+        const imgData = this._ctx.getImageData(0, 0, LAPK_FRAME_W, LAPK_FRAME_H);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+            // If pixel is very dark (near-black), make transparent
+            if (d[i] < 15 && d[i+1] < 15 && d[i+2] < 15) {
+                d[i+3] = 0;
+            }
+        }
+        this._ctx.putImageData(imgData, 0, 0);
+
         this._ctx.restore();
 
         // Idle timer — play random animation
