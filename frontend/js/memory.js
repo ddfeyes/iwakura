@@ -8,11 +8,12 @@
 
     class IwakuraMemory {
         constructor() {
-            this._files      = [];
-            this._selected   = -1;
-            this._viewing    = false; // true when a file is open in viewer
-            this._active     = false;
-            this._keyHandler = null;
+            this._files       = [];
+            this._selected    = -1;
+            this._viewing     = false; // true when a file is open in viewer
+            this._active      = false;
+            this._keyHandler  = null;
+            this._searchQuery = null;
         }
 
         /* Called by app.js when memory screen becomes active */
@@ -26,6 +27,9 @@
         stop() {
             this._active = false;
             this._unbindKeys();
+            // Reset search binding flag so it rebinds on next init
+            const input = document.getElementById('mem-search');
+            if (input) input._bound = false;
         }
 
         // ── Internal ──────────────────────────────────────────
@@ -53,9 +57,134 @@
 
                 this._renderList(listEl, viewerEl);
                 this._highlight(0); // pre-select first item without opening
+                this._bindSearch();
             } catch (e) {
                 listEl.innerHTML = '<div class="screen-loading red">ERROR LOADING FILES</div>';
             }
+        }
+
+        _bindSearch() {
+            const input = document.getElementById('mem-search');
+            if (!input || input._bound) return;
+            input._bound = true;
+
+            input.addEventListener('input', () => {
+                const val = input.value.trim();
+                if (val) {
+                    this._filterList(val);
+                } else {
+                    this._clearSearch();
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const val = input.value.trim();
+                    if (val) this._contentSearch(val);
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this._clearSearch();
+                    input.blur();
+                }
+            });
+        }
+
+        _filterList(q) {
+            const listEl = document.getElementById('memory-list');
+            if (!listEl) return;
+            const filtered = this._files.filter(f => f.name.toLowerCase().includes(q.toLowerCase()));
+            listEl.innerHTML = '';
+            if (!filtered.length) {
+                listEl.innerHTML = '<div class="screen-loading dim">NO MATCHES</div>';
+                this._setBadge(`[0 FILES]`, false);
+                return;
+            }
+            filtered.forEach((f, i) => {
+                const item = document.createElement('div');
+                item.className = 'mem-file';
+                item.dataset.idx = i;
+                const code   = memCode(this._files.indexOf(f));
+                const sizeKB = f.size ? (f.size / 1024).toFixed(1) + ' KB' : '--';
+                const modDate = f.modified
+                    ? new Date(f.modified * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+                    : '--';
+                item.innerHTML = `
+                    <div class="mem-file-name">${esc(f.name)}</div>
+                    <div class="mem-file-meta">
+                        <span class="orange">${code}</span>
+                        <span>${esc(sizeKB)} · ${esc(f.type || '')}</span>
+                        <span class="dim">${esc(modDate)}</span>
+                    </div>
+                `;
+                item.addEventListener('click', () => {
+                    const realIdx = this._files.indexOf(f);
+                    this._open(realIdx);
+                });
+                listEl.appendChild(item);
+            });
+            this._setBadge(`[${filtered.length} FILES]`, false);
+        }
+
+        async _contentSearch(q) {
+            const listEl = document.getElementById('memory-list');
+            if (!listEl) return;
+            this._searchQuery = q;
+            listEl.innerHTML = '<div class="screen-loading purple">SEARCHING<span class="loading-dots"></span></div>';
+            try {
+                const res  = await fetch('/api/memory/search?q=' + encodeURIComponent(q));
+                const data = await res.json();
+                const results = data.results || [];
+                listEl.innerHTML = '';
+                if (!results.length) {
+                    listEl.innerHTML = '<div class="screen-loading dim">NO CONTENT MATCHES</div>';
+                    this._setBadge('[0 MATCHES]', true);
+                    return;
+                }
+                results.forEach((r, i) => {
+                    const item = document.createElement('div');
+                    item.className = 'mem-file';
+                    item.dataset.idx = i;
+                    item.innerHTML = `
+                        <div class="mem-file-name">${esc(r.name)}</div>
+                        <div class="mem-excerpt">${esc(r.excerpt)}</div>
+                        <div class="mem-file-meta">
+                            <span class="orange">${r.match_count} match${r.match_count !== 1 ? 'es' : ''}</span>
+                        </div>
+                    `;
+                    item.addEventListener('click', () => {
+                        const realIdx = this._files.findIndex(f => f.name === r.name);
+                        if (realIdx >= 0) this._open(realIdx);
+                    });
+                    listEl.appendChild(item);
+                });
+                this._setBadge(`[${results.length} MATCHES]`, true);
+            } catch (e) {
+                listEl.innerHTML = '<div class="screen-loading red">SEARCH ERROR</div>';
+            }
+        }
+
+        _clearSearch() {
+            const input = document.getElementById('mem-search');
+            if (input) input.value = '';
+            this._searchQuery = null;
+            this._setBadge('', false);
+            const badge = document.getElementById('mem-search-badge');
+            if (badge) badge.style.display = 'none';
+            const listEl   = document.getElementById('memory-list');
+            const viewerEl = document.getElementById('memory-viewer');
+            if (listEl) this._renderList(listEl, viewerEl);
+            this._highlight(0);
+        }
+
+        _setBadge(text, orange) {
+            const badge = document.getElementById('mem-search-badge');
+            if (!badge) return;
+            if (!text) { badge.style.display = 'none'; return; }
+            badge.textContent = text;
+            badge.style.display = '';
+            badge.style.color = orange ? 'var(--orange)' : 'var(--green)';
         }
 
         _renderList(listEl, viewerEl) {
@@ -117,22 +246,23 @@
 
             const f    = this._files[idx];
             const code = memCode(idx);
-            this._loadFile(f.name, document.getElementById('memory-viewer'), code);
+            this._loadFile(f.name, document.getElementById('memory-viewer'), code, this._searchQuery);
         }
 
-        async _loadFile(name, viewerEl, code) {
+        async _loadFile(name, viewerEl, code, searchQuery) {
             if (!viewerEl) return;
             viewerEl.innerHTML = '<div class="screen-loading purple">ACCESSING<span class="loading-dots"></span></div>';
             try {
                 const res  = await fetch('/api/memory/' + encodeURIComponent(name));
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
+                const rendered = renderMemContent(data.content || '', name, searchQuery);
                 viewerEl.innerHTML = `
                     <div class="mem-view-hdr">
                         <span class="mem-view-title">${esc(name)}</span>
                         <span class="mem-view-code">${code}</span>
                     </div>
-                    <div class="mem-view-body">${renderMemContent(data.content || '', name)}</div>
+                    <div class="mem-view-body">${rendered}</div>
                 `;
             } catch (e) {
                 viewerEl.innerHTML = `
@@ -198,9 +328,10 @@
         return prefixes[i % prefixes.length] + String(i * 7 + 14).padStart(3, '0');
     }
 
-    function renderMemContent(content, name) {
+    function renderMemContent(content, name, searchQuery) {
+        let html;
         if (name.endsWith('.md')) {
-            return content
+            html = content
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
                 .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
                 .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
@@ -211,8 +342,14 @@
                     /\b([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3})\b/g,
                     '<span class="mem-kw">$1</span>'
                 );
+        } else {
+            html = esc(content);
         }
-        return esc(content);
+        if (searchQuery && searchQuery.length >= 2) {
+            const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            html = html.replace(new RegExp(escaped, 'gi'), m => `<mark class="mem-kw-match">${m}</mark>`);
+        }
+        return html;
     }
 
     function esc(s) {

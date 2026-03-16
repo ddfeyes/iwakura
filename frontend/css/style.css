@@ -583,6 +583,38 @@ body::after {
     border: 1px solid rgba(210,185,128,0.45);
     color: var(--beige); padding: 0 3px;
 }
+.mem-search-input {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: rgba(255,140,0,0.05);
+    border: 1px solid rgba(255,140,0,0.2);
+    border-radius: 2px;
+    color: var(--orange);
+    padding: 3px 8px;
+    outline: none;
+    width: 160px;
+    transition: border-color 0.2s;
+}
+.mem-search-input:focus { border-color: var(--orange); }
+.mem-search-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--orange);
+    margin-left: 8px;
+}
+mark.mem-kw-match {
+    background: rgba(255,140,0,0.25);
+    color: var(--white);
+    font-style: normal;
+}
+.mem-excerpt {
+    font-size: 9px;
+    color: var(--dim);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* ── Psyche Screen ─────────────────────────────────────────── */
 .psyche-grid {

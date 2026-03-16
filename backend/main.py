@@ -131,6 +131,32 @@ async def api_memory_list():
     return JSONResponse({"files": files})
 
 
+@app.get("/api/memory/search")
+async def api_memory_search(q: str = ""):
+    if not q or len(q) < 2:
+        return JSONResponse({"results": []})
+    query = q.lower()
+    results = []
+    if LAIN_MEMORY.exists():
+        for f in sorted(LAIN_MEMORY.iterdir()):
+            if not f.is_file():
+                continue
+            try:
+                content = f.read_text(errors="replace")
+                count = content.lower().count(query)
+                if count == 0:
+                    continue
+                idx = content.lower().find(query)
+                start = max(0, idx - 60)
+                end = min(len(content), idx + len(query) + 80)
+                excerpt = content[start:end].replace('\n', ' ').strip()
+                results.append({"name": f.name, "excerpt": excerpt, "match_count": count})
+            except Exception:
+                pass
+    results.sort(key=lambda x: x["match_count"], reverse=True)
+    return JSONResponse({"results": results[:8], "query": q})
+
+
 @app.get("/api/memory/{filename}")
 async def api_memory_file(filename: str):
     # Sanitize

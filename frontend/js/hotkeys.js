@@ -90,6 +90,16 @@ class IwakuraHotkeys {
             }
         }
 
+        // Memory-only shortcuts
+        if (this._currentScreen() === 'memory') {
+            if (e.key === '/') {
+                e.preventDefault();
+                const input = document.getElementById('mem-search');
+                if (input) input.focus();
+                return;
+            }
+        }
+
         if (e.key === '?') {
             this._toggleHelp();
             return;
