@@ -17,6 +17,7 @@
     let tasksDash     = null;
     let searchScreen  = null;
     let wiredScreen   = null;
+    let lainChar      = null;
 
     // ── DOM refs ──────────────────────────────────────────────
     const screens = {
@@ -205,6 +206,15 @@
             if (lainChar) lainChar.resume();
         }
 
+        // Init Lain character once
+        if (!lainChar && window.LainCharacter) {
+            const charContainer = document.getElementById('lain-char-container');
+            if (charContainer) {
+                lainChar = new LainCharacter();
+                lainChar.init(charContainer);
+            }
+        }
+
         // Load session info for footer
         fetch('/api/session')
             .then(r => r.ok ? r.json() : null)
@@ -250,6 +260,11 @@
             const hubSess = document.getElementById('hub-session-id');
             if (hubSess && sid) hubSess.textContent = 'SESSION: ' + sid.slice(0, 12) + '...';
         };
+
+        // Wire Lain character states to chat lifecycle
+        chat.onThinking  = () => { if (lainChar) lainChar.setState('thinking'); };
+        chat.onResponse  = () => { if (lainChar) lainChar.setState('talking'); };
+        chat.onIdle      = () => { if (lainChar) lainChar.setState('idle'); };
 
         chat.init(container);
 

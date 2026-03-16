@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LainCharacter — Test Suite</title>
+    <style>
+        body { font-family: monospace; background: #0a0a1a; color: #e0e0e0; padding: 20px; }
+        h1   { color: #ff8c00; }
+        .suite { margin-bottom: 24px; }
+        .suite-title { color: #00d4aa; font-size: 13px; margin-bottom: 8px; letter-spacing: .1em; }
+        .test { padding: 3px 0 3px 16px; font-size: 12px; }
+        .pass { color: #00ff88; }
+        .fail { color: #ff4455; }
+        .summary { margin-top: 20px; font-size: 13px; color: #ff8c00; }
+        #preview { margin-top: 24px; border: 1px solid #00d4aa44; padding: 10px; display: inline-block; }
+        #preview-label { color: #8b7cc8; font-size: 10px; margin-bottom: 6px; }
+        #char-preview { width: 90px; height: 225px; }
+    </style>
+</head>
+<body>
+<h1>LainCharacter Tests</h1>
+<div id="results"></div>
+<div class="summary" id="summary"></div>
+
+<div id="preview">
+    <div id="preview-label">CHARACTER PREVIEW (90×225 px)</div>
+    <div id="char-preview"></div>
+</div>
+
+<!-- Load module under test -->
+<script src="../js/character.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    // ── Minimal test runner ────────────────────────────────────
+
+    const suites = [];
+    let currentSuite = null;
+
+    function describe(name, fn) {
+        currentSuite = { name, tests: [] };
+        suites.push(currentSuite);
+        fn();
+    }
+
+    function it(name, fn) {
+        let pass = false, err = null;
+        try { fn(); pass = true; }
+        catch (e) { err = e; }
+        currentSuite.tests.push({ name, pass, err });
+    }
+
+    function expect(val) {
+        return {
+            toBe(expected) {
+                if (val !== expected)
+                    throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(val)}`);
+            },
+            toBeTrue() {
+                if (val !== true)
+                    throw new Error(`Expected true, got ${JSON.stringify(val)}`);
+            },
+            toBeFalsy() {
+                if (val)
+                    throw new Error(`Expected falsy, got ${JSON.stringify(val)}`);
+            },
+            toBeInstanceOf(cls) {
+                if (!(val instanceof cls))
+                    throw new Error(`Expected instance of ${cls.name}`);
+            },
+            toBeGreaterThan(n) {
+                if (!(val > n))
+                    throw new Error(`Expected > ${n}, got ${val}`);
+            },
+            toBeLessThan(n) {
+                if (!(val < n))
+                    throw new Error(`Expected < ${n}, got ${val}`);
+            },
+            toBeNull() {
+                if (val !== null)
+                    throw new Error(`Expected null, got ${JSON.stringify(val)}`);
+            },
+            toContain(sub) {
+                if (!String(val).includes(sub))
+                    throw new Error(`Expected "${val}" to contain "${sub}"`);
+            },
+            not: {
+                toBeNull() {
+                    if (val === null)
+                        throw new Error(`Expected non-null`);
+                },
+                toBeFalsy() {
+                    if (!val)
+                        throw new Error(`Expected truthy, got ${JSON.stringify(val)}`);
+                },
+            },
+        };
+    }
+
+    // ── Helper: make an in-memory container ───────────────────
+    function makeContainer() {
+        const el = document.createElement('div');
+        el.style.cssText = 'width:90px;height:225px;position:absolute;left:-9999px';
+        document.body.appendChild(el);
+        return el;
+    }
+
+    // ── Test suites ───────────────────────────────────────────
+
+    describe('API surface', () => {
+        it('LainCharacter class is defined', () => {
+            expect(typeof window.LainCharacter).toBe('function');
+        });
+
+        it('constructor creates instance', () => {
+            const c = new LainCharacter();
+            expect(c).toBeInstanceOf(LainCharacter);
+        });
+
+        it('instance has init()', () => {
+            const c = new LainCharacter();
+            expect(typeof c.init).toBe('function');
+        });
+
+        it('instance has setState()', () => {
+            const c = new LainCharacter();
+            expect(typeof c.setState).toBe('function');
+        });
+
+        it('instance has getState()', () => {
+            const c = new LainCharacter();
+            expect(typeof c.getState).toBe('function');
+        });
+
+        it('instance has destroy()', () => {
+            const c = new LainCharacter();
+            expect(typeof c.destroy).toBe('function');
+        });
+    });
+
+    describe('init()', () => {
+        it('injects an SVG element into the container', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+            const svg = container.querySelector('svg');
+            expect(svg).not.toBeNull();
+            c.destroy();
+        });
+
+        it('SVG has viewBox attribute', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+            const svg = container.querySelector('svg');
+            const vb = svg.getAttribute('viewBox');
+            expect(vb).not.toBeFalsy();
+            c.destroy();
+        });
+
+        it('SVG viewBox defines a taller-than-wide shape', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+            const svg = container.querySelector('svg');
+            const parts = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+            const svgW = parts[2], svgH = parts[3];
+            expect(svgH > svgW).toBeTrue();
+            c.destroy();
+        });
+    });
+
+    describe('Required SVG elements', () => {
+        let container, char;
+
+        function setup() {
+            container = makeContainer();
+            char = new LainCharacter();
+            char.init(container);
+        }
+        function teardown() { char.destroy(); }
+
+        const required = [
+            'lc-hair',
+            'lc-head-group',
+            'lc-eyes-group',
+            'lc-mouth',
+            'lc-body-group',
+            'lc-arm-r',
+            'lc-eye-l',
+            'lc-eye-r',
+        ];
+
+        required.forEach(id => {
+            it(`#${id} exists in SVG`, () => {
+                setup();
+                const el = container.querySelector(`#${id}`);
+                expect(el).not.toBeNull();
+                teardown();
+            });
+        });
+    });
+
+    describe('Proportions', () => {
+        it('head+hair height is between 1/7 and 1/5 of total SVG height', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+
+            const svg = container.querySelector('svg');
+            const parts = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+            const svgH = parts[3];
+
+            // The face ellipse tells us head extent
+            const faceEl = container.querySelector('#lc-face');
+            expect(faceEl).not.toBeNull();
+            const cy  = parseFloat(faceEl.getAttribute('cy'));
+            const ry  = parseFloat(faceEl.getAttribute('ry'));
+            const headBot = cy + ry; // bottom of face oval
+
+            const ratio = headBot / svgH;
+            // head bottom should be within roughly the top 1/5 to 1/3 of the figure
+            expect(ratio > 0.14).toBeTrue();  // not too tiny
+            expect(ratio < 0.40).toBeTrue();  // not chibi (head ≠ half the figure)
+            c.destroy();
+        });
+
+        it('eyes are in the upper half of the face', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+
+            const faceEl = container.querySelector('#lc-face');
+            const eyeL   = container.querySelector('#lc-eye-l ellipse');
+            expect(eyeL).not.toBeNull();
+
+            const faceCy = parseFloat(faceEl.getAttribute('cy'));
+            const eyeCy  = parseFloat(eyeL.getAttribute('cy'));
+            // Eyes should be above the face centre (anime style)
+            expect(eyeCy < faceCy).toBeTrue();
+            c.destroy();
+        });
+    });
+
+    describe('setState()', () => {
+        it('default state is "idle"', () => {
+            const c = new LainCharacter();
+            expect(c.getState()).toBe('idle');
+        });
+
+        ['idle', 'thinking', 'talking', 'surprised'].forEach(state => {
+            it(`setState("${state}") does not throw`, () => {
+                const container = makeContainer();
+                const c = new LainCharacter();
+                c.init(container);
+                let threw = false;
+                try { c.setState(state); } catch (_) { threw = true; }
+                expect(threw).toBeFalsy();
+                c.destroy();
+            });
+
+            it(`setState("${state}") updates data-state on SVG`, () => {
+                const container = makeContainer();
+                const c = new LainCharacter();
+                c.init(container);
+                c.setState(state);
+                const svg = container.querySelector('svg');
+                expect(svg.getAttribute('data-state')).toBe(state);
+                c.destroy();
+            });
+        });
+
+        it('ignores unknown states', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+            c.setState('idle');
+            c.setState('flying_through_wired');
+            expect(c.getState()).toBe('idle');
+            c.destroy();
+        });
+
+        it('getState() reflects last valid setState() call', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+            c.setState('thinking');
+            expect(c.getState()).toBe('thinking');
+            c.setState('idle');
+            expect(c.getState()).toBe('idle');
+            c.destroy();
+        });
+    });
+
+    describe('destroy()', () => {
+        it('does not throw when called before init()', () => {
+            const c = new LainCharacter();
+            let threw = false;
+            try { c.destroy(); } catch (_) { threw = true; }
+            expect(threw).toBeFalsy();
+        });
+
+        it('can be called multiple times', () => {
+            const container = makeContainer();
+            const c = new LainCharacter();
+            c.init(container);
+            let threw = false;
+            try { c.destroy(); c.destroy(); } catch (_) { threw = true; }
+            expect(threw).toBeFalsy();
+        });
+    });
+
+    // ── Render results ─────────────────────────────────────────
+
+    const resultsEl = document.getElementById('results');
+    let total = 0, passed = 0;
+
+    suites.forEach(suite => {
+        const div = document.createElement('div');
+        div.className = 'suite';
+        div.innerHTML = `<div class="suite-title">▸ ${suite.name}</div>`;
+
+        suite.tests.forEach(t => {
+            total++;
+            if (t.pass) passed++;
+            const row = document.createElement('div');
+            row.className = `test ${t.pass ? 'pass' : 'fail'}`;
+            row.textContent = `${t.pass ? '✓' : '✗'} ${t.name}${t.err ? ' — ' + t.err.message : ''}`;
+            div.appendChild(row);
+        });
+
+        resultsEl.appendChild(div);
+    });
+
+    document.getElementById('summary').textContent =
+        `${passed}/${total} tests passed ${passed === total ? '✓ ALL GREEN' : '✗ FAILURES'}`;
+
+    // ── Visual preview ─────────────────────────────────────────
+    const preview = document.getElementById('char-preview');
+    const previewChar = new LainCharacter();
+    previewChar.init(preview);
+
+    // Cycle through states for visual confirmation
+    const states = ['idle', 'thinking', 'talking', 'surprised'];
+    let si = 0;
+    setInterval(() => {
+        si = (si + 1) % states.length;
+        previewChar.setState(states[si]);
+        document.getElementById('preview-label').textContent =
+            `STATE: ${states[si].toUpperCase()} (90×225 px)`;
+    }, 3000);
+
+})();
+</script>
+</body>
+</html>

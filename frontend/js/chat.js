@@ -32,6 +32,9 @@ class IwakuraChat {
         // Callbacks
         this.onStatusChange  = null;  // fn(bool connected)
         this.onSessionChange = null;  // fn(sessionId string)
+        this.onThinking      = null;  // fn() — user sent, waiting for response
+        this.onResponse      = null;  // fn() — first token received (Lain speaking)
+        this.onIdle          = null;  // fn() — response complete
     }
 
     // ── Public API ────────────────────────────────────────────
@@ -171,11 +174,13 @@ class IwakuraChat {
         switch (msg.type) {
             case 'thinking':
                 this._showThinking();
+                if (this.onThinking) this.onThinking();
                 break;
 
             case 'token':
                 this._hideThinking();
                 this._hideTyping();
+                if (this._streamEl === null && this.onResponse) this.onResponse();
                 this._appendToken(msg);
                 break;
 
@@ -184,6 +189,7 @@ class IwakuraChat {
                 this._finalizeStream(msg);
                 this._incrementUnread();
                 if (this.onSessionChange) this.onSessionChange(msg.sessionId);
+                if (this.onIdle) this.onIdle();
                 if (window.audio) window.audio.playBeep();
                 break;
 
