@@ -26,6 +26,10 @@ class OrbitalNav {
         this.dustGroup   = null;
         this.navMeshes   = [];
 
+        // Optional hover callback: fired when hovered nav changes
+        this.onHoverChange  = null;   // (navId: string | null) => void
+        this._prevHoveredId = null;
+
         // Nav items — 7 screens on the primary orbital ring
         this.navDefs = [
             { id: 'diary',  label: 'DIARY',  color: 0xff8c00, baseAngle: 0 },
@@ -436,6 +440,12 @@ class OrbitalNav {
                 this.canvas.style.cursor = 'pointer';
             } else {
                 this.canvas.style.cursor = 'crosshair';
+            }
+
+            // Fire hover change callback when hovered nav changes
+            if (this.hoveredId !== this._prevHoveredId) {
+                this._prevHoveredId = this.hoveredId;
+                if (this.onHoverChange) this.onHoverChange(this.hoveredId);
             }
 
             this.renderer.render(this.scene, this.camera);

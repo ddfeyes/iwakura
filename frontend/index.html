@@ -78,30 +78,9 @@
             <span class="header-title" data-glitch>THE WIRED // ACCESS POINT</span>
             <span class="header-code green">Ira042</span>
         </div>
-        <div class="hub-center-label">
-            <!-- Lain silhouette — dark figure, glowing outline -->
-            <div class="lain-silhouette-wrap">
-                <svg class="lain-svg" viewBox="0 0 120 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <!-- Hair (bob cut outer) -->
-                    <path d="M60,8 C82,8 100,26 102,52 C104,68 97,84 88,94
-                             C88,44 75,16 60,16 C45,16 32,44 32,94
-                             C23,84 16,68 18,52 C20,26 38,8 60,8Z"
-                          fill="#06061a" stroke="#00d4aa" stroke-width="1.2"/>
-                    <!-- Face + neck + body -->
-                    <path d="M32,94 C32,44 45,16 60,16 C75,16 88,44 88,94
-                             C88,110 80,124 74,130 L74,142
-                             C92,146 110,164 114,190 L114,198 L6,198 L6,190
-                             C10,164 28,146 46,142 L46,130
-                             C40,124 32,110 32,94Z"
-                          fill="#06061a" stroke="#00d4aa" stroke-width="0.9"/>
-                    <!-- Eyes — minimal, mysterious -->
-                    <line x1="44" y1="74" x2="54" y2="74" stroke="#00d4aa" stroke-width="0.7" opacity="0.3"/>
-                    <line x1="66" y1="74" x2="76" y2="74" stroke="#00d4aa" stroke-width="0.7" opacity="0.3"/>
-                </svg>
-            </div>
-            <div class="center-name">L A I N</div>
-            <div class="center-status" id="hub-lain-status">● PRESENT</div>
-        </div>
+        <!-- Lain character — populated by character.js LainCharacter -->
+        <div class="hub-center-label lain-char-inner" id="lain-char-container"
+             data-state="idle"></div>
         <div class="hub-footer">
             <span class="dim">SITE A</span>
             <span class="orange">▸</span>
@@ -291,6 +270,7 @@
 <script src="js/effects.js"></script>
 <script src="js/chat.js"></script>
 <script src="js/nav.js"></script>
+<script src="js/character.js"></script>
 <script src="js/psyche.js"></script>
 <script src="js/memory.js"></script>
 <script src="js/status.js"></script>
