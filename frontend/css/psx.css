@@ -1,0 +1,137 @@
+/* ═══════════════════════════════════════════════════════════
+   IWAKURA — PSX VISUAL SYSTEM
+   Serial Experiments Lain PSX Game Aesthetic (1998)
+   Import this file FIRST, before any screen-specific CSS.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Google Fonts ──────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap');
+
+/* ── Color Palette (CSS custom properties) ─────────────────── */
+:root {
+    --color-bg:             #0a0a1a;
+    --color-bg2:            #0d0d2b;
+    --color-accent-orange:  #ff8c00;
+    --color-accent-cyan:    #00d4aa;
+    --color-accent-purple:  #8b7cc8;
+    --color-text:           #e0e0e0;
+    --color-text-green:     #00ff88;
+    --color-blue-dot:       #3a7bd5;
+}
+
+/* ── Typography classes ────────────────────────────────────── */
+.font-psx  { font-family: 'VT323', monospace; }
+.font-mono { font-family: 'Share Tech Mono', monospace; }
+
+/* ── Scanlines overlay (.scanlines) ────────────────────────── */
+/* Uses ::before to avoid collision with body::after (vignette in style.css). */
+.scanlines::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.08) 2px,
+        rgba(0, 0, 0, 0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* ── Data rain background (.data-rain) ──────────────────────── */
+/* Optional CSS-only fallback. The canvas approach (data-rain.js) is preferred. */
+.data-rain {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.04;
+}
+
+/* ── Progress dots (● ● ● ○ ○) ─────────────────────────────── */
+.progress-dots {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.progress-dots .pdot,
+.progress-dots .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-blue-dot);
+    opacity: 0.2;
+    transition: opacity 0.3s, box-shadow 0.3s;
+}
+
+.progress-dots .pdot.on,
+.progress-dots .dot.on,
+.progress-dots .pdot.filled,
+.progress-dots .dot.filled {
+    opacity: 1;
+    box-shadow: 0 0 8px var(--color-blue-dot);
+}
+
+/* ── Orange divider ─────────────────────────────────────────── */
+.hr-orange {
+    height: 1px;
+    border: none;
+    background: var(--color-accent-orange);
+    box-shadow: 0 0 6px rgba(255, 140, 0, 0.5);
+    margin: 10px 0;
+}
+
+/* ── Gate pass notification ─────────────────────────────────── */
+.gate-pass {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--color-text);
+    background: rgba(10, 10, 26, 0.92);
+    border: 1px solid var(--color-accent-orange);
+    padding: 5px 12px;
+    box-shadow: 0 0 10px rgba(255, 140, 0, 0.2);
+}
+
+.gate-pass::before {
+    content: '●';
+    color: var(--color-accent-orange);
+    font-size: 8px;
+}
+
+.gate-pass.granted { border-color: var(--color-text-green); box-shadow: 0 0 10px rgba(0, 255, 136, 0.2); }
+.gate-pass.granted::before { color: var(--color-text-green); }
+.gate-pass.denied  { border-color: #ff4455; box-shadow: 0 0 10px rgba(255, 68, 85, 0.2); }
+.gate-pass.denied::before  { color: #ff4455; }
+
+/* ── Color utilities ────────────────────────────────────────── */
+.text-orange { color: var(--color-accent-orange); }
+.text-cyan   { color: var(--color-accent-cyan); }
+.text-green  { color: var(--color-text-green); }
+.text-purple { color: var(--color-accent-purple); }
+
+/* ── Background utility ─────────────────────────────────────── */
+.bg-psx { background-color: var(--color-bg); }
+
+/* ── Border utilities ───────────────────────────────────────── */
+.border-orange { border: 1px solid var(--color-accent-orange); }
+.border-cyan   { border: 1px solid var(--color-accent-cyan); }
+
+/* ── Glow utilities ─────────────────────────────────────────── */
+.glow-orange {
+    text-shadow:
+        0 0 8px rgba(255, 140, 0, 0.9),
+        0 0 20px rgba(255, 140, 0, 0.5);
+}
+
+.glow-cyan {
+    text-shadow:
+        0 0 8px rgba(0, 212, 170, 0.9),
+        0 0 20px rgba(0, 212, 170, 0.5);
+}
