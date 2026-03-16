@@ -248,9 +248,8 @@ class IwakuraChat {
             this._streamBuf = '';
         }
 
-        // Append the new line with a cursor
-        const line = msg.text || '';
-        this._streamBuf += (this._streamBuf ? '\n' : '') + line;
+        // Append the new chunk directly — SSE yields raw text fragments, not lines
+        this._streamBuf += msg.text || '';
 
         // Render with a blinking cursor at the end
         this._streamEl.textContent = this._streamBuf + ' ▋';

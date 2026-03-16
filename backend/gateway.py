@@ -1,26 +1,33 @@
-"""OpenClaw gateway client — runs openclaw agent subprocess for responses.
+"""OpenClaw gateway client — HTTP /v1/chat/completions SSE proxy.
 
-We use the `openclaw agent --json` CLI rather than the HTTP hooks endpoint because
-POST /hooks/agent is fire-and-forget (returns {"ok":true,"runId":"..."} immediately
-with no way to retrieve the response text via HTTP).  The CLI is synchronous and
-returns the full response inline, which is what the WebSocket chat flow requires.
+Replaces the previous `openclaw agent` CLI approach which hangs when stdout
+is piped (Node.js TTY detection blocks the subprocess indefinitely).
 
-stream_message() runs without --json and yields lines as they arrive, enabling
-real-time token streaming to the frontend.
+The Gateway exposes an OpenAI-compatible POST /v1/chat/completions endpoint.
+We call it via httpx with stream=True to get SSE tokens as they arrive.
+If SSE yields no content (can happen when the primary model is overloaded and
+the Gateway silently retries), we fall back to a non-streaming request so the
+caller always receives a response.
 """
-import asyncio
-from collections.abc import AsyncIterator
 import json
+import logging
 import os
 import pathlib
-import logging
+from collections.abc import AsyncIterator
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
-LAIN_AGENT_ID = "lain"
-SESSION_FILE = pathlib.Path(__file__).parent / ".session_id"
+LAIN_AGENT_ID   = "lain"
+SESSION_FILE    = pathlib.Path(__file__).parent / ".session_id"
 OPENCLAW_CONFIG = pathlib.Path.home() / ".openclaw" / "openclaw.json"
 
+# Stable user key — Gateway derives a persistent session from this string
+_SESSION_USER = "iwakura-lain"
+
+
+# ── Config helpers ────────────────────────────────────────────────────────────
 
 def _read_config() -> dict:
     try:
@@ -37,13 +44,17 @@ def get_gateway_url() -> str:
 
 
 def get_hook_token() -> str:
-    # Support both OPENCLAW_TOKEN and OPENCLAW_HOOK_TOKEN
+    """Return the auth token for the Gateway's HTTP endpoints."""
     token = os.environ.get("OPENCLAW_TOKEN") or os.environ.get("OPENCLAW_HOOK_TOKEN")
     if token:
         return token
     cfg = _read_config()
-    return cfg.get("hooks", {}).get("token", "")
+    # gateway.auth.token is the credential used by /v1/chat/completions
+    gw_token = cfg.get("gateway", {}).get("auth", {}).get("token", "")
+    return gw_token or cfg.get("hooks", {}).get("token", "")
 
+
+# ── Session persistence ───────────────────────────────────────────────────────
 
 def load_session_id() -> str | None:
     try:
@@ -63,105 +74,137 @@ def save_session_id(session_id: str) -> None:
         pass
 
 
-# Global session state
 _session_id: str | None = load_session_id()
 
 
-async def send_message(text: str) -> dict | None:
-    """Send a message to Lain via openclaw agent CLI. Returns dict with text and sessionId."""
-    global _session_id
-
-    cmd = ["openclaw", "agent", "--agent", LAIN_AGENT_ID, "--message", text, "--json"]
-    if _session_id:
-        cmd.extend(["--session-id", _session_id])
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-    except asyncio.TimeoutError:
-        logger.error("openclaw agent timed out")
-        return None
-    except Exception as e:
-        logger.error(f"openclaw agent subprocess error: {e}")
-        return None
-
-    if proc.returncode != 0:
-        logger.error(f"openclaw agent failed (rc={proc.returncode}): {stderr.decode()[:300]}")
-        return None
-
-    try:
-        data = json.loads(stdout.decode())
-    except Exception as e:
-        logger.error(f"Failed to parse openclaw agent output: {e}")
-        return None
-
-    if data.get("status") != "ok":
-        logger.error(f"openclaw agent returned non-ok status: {data}")
-        return None
-
-    result = data.get("result", {})
-    payloads = result.get("payloads", [])
-    text_response = " ".join(p.get("text", "") for p in payloads if p.get("text"))
-
-    session_id = result.get("meta", {}).get("agentMeta", {}).get("sessionId", _session_id)
-    if session_id and session_id != _session_id:
-        _session_id = session_id
-        save_session_id(session_id)
-
-    return {
-        "text": text_response,
-        "sessionId": session_id or "",
-        "runId": data.get("runId", ""),
-    }
-
+# ── Gateway calls ─────────────────────────────────────────────────────────────
 
 async def stream_message(text: str) -> AsyncIterator[str]:
-    """Stream response tokens from openclaw agent CLI line-by-line.
+    """Yield response text chunks from /v1/chat/completions (SSE).
 
-    Runs `openclaw agent` without --json so output appears incrementally.
-    Falls back to a single token if the process exits non-zero.
-    Yields str chunks; updates global _session_id when done if detectable.
+    Primary path: SSE streaming — yields chunks as they arrive.
+    Fallback path: non-streaming — used when SSE yields no content (model
+    overload causes Gateway to close the stream without tokens).
+    Updates _session_id with the completion ID on success.
     """
     global _session_id
 
-    cmd = ["openclaw", "agent", "--agent", LAIN_AGENT_ID, "--message", text]
-    if _session_id:
-        cmd.extend(["--session-id", _session_id])
+    url   = get_gateway_url() + "/v1/chat/completions"
+    token = get_hook_token()
+    auth  = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
+    completion_id: str | None = None
+    got_content = False
+
+    # ── 1. SSE streaming ─────────────────────────────────────────
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        payload = {
+            "model": f"openclaw:{LAIN_AGENT_ID}",
+            "messages": [{"role": "user", "content": text}],
+            "stream": True,
+            "user": _SESSION_USER,
+        }
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream("POST", url, json=payload,
+                                     headers={**auth, "Accept": "text/event-stream"}) as resp:
+                if resp.status_code != 200:
+                    body = await resp.aread()
+                    logger.error(f"SSE {resp.status_code}: {body.decode()[:300]}")
+                else:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            if not completion_id:
+                                completion_id = chunk.get("id")
+                            content = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
+                            if content:
+                                got_content = True
+                                yield content
+                        except Exception as e:
+                            logger.warning(f"SSE parse: {e}")
     except Exception as e:
-        logger.error(f"openclaw agent subprocess error: {e}")
+        logger.error(f"stream_message SSE: {e}")
+
+    if got_content:
+        if completion_id and completion_id != _session_id:
+            _session_id = completion_id
+            save_session_id(completion_id)
         return
 
+    # ── 2. Non-streaming fallback ────────────────────────────────
+    logger.info("SSE yielded no content — falling back to non-streaming request")
     try:
-        async for raw_line in proc.stdout:
-            line = raw_line.decode(errors="replace").rstrip("\n")
-            if line:
-                yield line
+        payload_ns = {
+            "model": f"openclaw:{LAIN_AGENT_ID}",
+            "messages": [{"role": "user", "content": text}],
+            "user": _SESSION_USER,
+        }
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(url, json=payload_ns, headers=auth)
+        if resp.status_code != 200:
+            logger.error(f"non-stream fallback {resp.status_code}: {resp.text[:300]}")
+            return
+        data = resp.json()
+        completion_id = data.get("id") or completion_id
+        response_text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        if response_text:
+            yield response_text
     except Exception as e:
-        logger.error(f"stream_message read error: {e}")
+        logger.error(f"stream_message fallback: {e}")
+        return
+
+    if completion_id and completion_id != _session_id:
+        _session_id = completion_id
+        save_session_id(completion_id)
+
+
+async def send_message(text: str) -> dict | None:
+    """Send a message and return full response dict (non-streaming)."""
+    global _session_id
+
+    url   = get_gateway_url() + "/v1/chat/completions"
+    token = get_hook_token()
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {
+        "model": f"openclaw:{LAIN_AGENT_ID}",
+        "messages": [{"role": "user", "content": text}],
+        "user": _SESSION_USER,
+    }
 
     try:
-        await asyncio.wait_for(proc.wait(), timeout=10)
-    except asyncio.TimeoutError:
-        proc.kill()
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+    except Exception as e:
+        logger.error(f"send_message: {e}")
+        return None
 
-    if proc.returncode != 0:
-        stderr_data = b""
-        try:
-            stderr_data = await proc.stderr.read()
-        except Exception:
-            pass
-        logger.error(f"openclaw agent stream exited {proc.returncode}: {stderr_data.decode()[:300]}")
+    if resp.status_code != 200:
+        logger.error(f"send_message {resp.status_code}: {resp.text[:300]}")
+        return None
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        logger.error(f"send_message JSON: {e}")
+        return None
+
+    completion_id = data.get("id", "")
+    response_text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+
+    if completion_id and completion_id != _session_id:
+        _session_id = completion_id
+        save_session_id(completion_id)
+
+    return {
+        "text": response_text,
+        "sessionId": completion_id or _session_id or "",
+        "runId": completion_id,
+    }
 
 
 def get_current_session_id() -> str | None:
