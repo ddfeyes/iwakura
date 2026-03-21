@@ -187,20 +187,45 @@
 
     // ── Lain character loader (VRM → pixel-art fallback) ─────
 
+    /**
+     * Wait for window.LainVrmCharacter to be available (set by the ES module).
+     * Resolves immediately if already present, else waits for 'vrm-character-ready'
+     * event (dispatched by character-vrm.js after its module executes).
+     * Times out after 5 s to avoid hanging on missing/slow CDN.
+     */
+    function _waitForVrmClass() {
+        if (window.LainVrmCharacter) return Promise.resolve(window.LainVrmCharacter);
+        return new Promise(resolve => {
+            const timeout = setTimeout(() => {
+                document.removeEventListener('vrm-character-ready', handler);
+                resolve(null);
+            }, 5000);
+            function handler(e) {
+                clearTimeout(timeout);
+                resolve(e.detail?.LainVrmCharacter || window.LainVrmCharacter || null);
+            }
+            document.addEventListener('vrm-character-ready', handler, { once: true });
+        });
+    }
+
     async function _initLainChar(scene) {
         const charEl = document.getElementById('lain-char-container');
 
-        // Try VRM character if module is loaded
-        if (window.LainVrmCharacter) {
+        // FIX #2 (MAJOR): wait for ES module to register LainVrmCharacter before
+        // checking — avoids sync race where app.js runs before module scripts fire.
+        const VrmClass = await _waitForVrmClass();
+
+        if (VrmClass) {
             try {
                 const resp = await fetch('models/lain.vrm', { method: 'HEAD' });
                 if (resp.ok) {
-                    lainChar = new LainVrmCharacter(charEl);
+                    lainChar = new VrmClass(charEl);
                     await lainChar.init(scene);
                     return;
                 }
-            } catch (_) {
-                // network error or file absent — fall through to pixel art
+            } catch (err) {
+                // FIX #4 (MINOR): log VRM init errors instead of silently swallowing
+                console.warn('[app] VRM init failed, falling back to pixel art:', err);
             }
         }
 

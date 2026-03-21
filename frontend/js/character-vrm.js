@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { GLTFLoader }                                 from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, VRMExpressionPresetName } from '@pixiv/three-vrm';
+import { initEffects, triggerGlitch, renderFrame }    from './effects-vrm.js';
 
 const VRM_PATH  = 'models/lain.vrm';
 const CAM_FOV   = 28;    // tight portrait framing
@@ -41,6 +42,12 @@ class LainVrmCharacter {
 
         // Pose scheduler
         this._poseTmr   = null;
+
+        // ResizeObserver
+        this._resizeObs = null;
+
+        // Page visibility
+        this._onVisibilityChange = this._handleVisibility.bind(this);
     }
 
     // ── Public API ────────────────────────────────────────────
@@ -53,6 +60,9 @@ class LainVrmCharacter {
     async init(_externalScene) {
         this._setupRenderer();
         this._clock = new THREE.Clock();
+
+        // Pause RAF when tab is hidden — fixes wasted GPU on hidden tab
+        document.addEventListener('visibilitychange', this._onVisibilityChange);
 
         try {
             await this._loadVRM();
@@ -74,6 +84,7 @@ class LainVrmCharacter {
         if (this._state === s) return;
         this._state = s;
         this._applyStatePose(s);
+        triggerGlitch(); // SEL atmosphere effect on state transition
     }
 
     /** @param {string} _navId */
@@ -114,15 +125,32 @@ class LainVrmCharacter {
     }
 
     resume() {
-        if (!this._raf) this._startLoop();
+        if (!this._raf && !document.hidden) this._startLoop();
     }
 
     /** Release WebGL resources. */
     dispose() {
         this.stop();
+        document.removeEventListener('visibilitychange', this._onVisibilityChange);
+        if (this._resizeObs) { this._resizeObs.disconnect(); this._resizeObs = null; }
         if (this._vrm)      VRMUtils.deepDispose(this._vrm.scene);
         if (this._renderer) this._renderer.dispose();
         if (this._canvas && this._canvas.parentNode) this._canvas.parentNode.removeChild(this._canvas);
+    }
+
+    // ── Visibility handling ───────────────────────────────────
+
+    _handleVisibility() {
+        if (document.hidden) {
+            // Pause loop when tab is not visible
+            if (this._raf) {
+                cancelAnimationFrame(this._raf);
+                this._raf = null;
+            }
+        } else {
+            // Resume when tab becomes visible again
+            if (!this._raf) this._startLoop();
+        }
     }
 
     // ── Renderer setup ────────────────────────────────────────
@@ -173,6 +201,24 @@ class LainVrmCharacter {
         const rim = new THREE.DirectionalLight(0x6464ff, 1.0);
         rim.position.set(-1.0, 0.5, -1.0);
         this._scene.add(rim);
+
+        // ── FIX #1 (MAJOR): initialise EffectComposer here ──
+        initEffects(this._renderer, this._scene, this._camera);
+
+        // ── FIX #3 (MINOR): ResizeObserver — keep canvas in sync with container ──
+        if (this._el && window.ResizeObserver) {
+            this._resizeObs = new ResizeObserver(entries => {
+                for (const entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    if (width > 0 && height > 0) {
+                        this._renderer.setSize(width, height, false);
+                        this._camera.aspect = width / height;
+                        this._camera.updateProjectionMatrix();
+                    }
+                }
+            });
+            this._resizeObs.observe(this._el);
+        }
     }
 
     // ── VRM loading ───────────────────────────────────────────
@@ -181,7 +227,14 @@ class LainVrmCharacter {
         const loader = new GLTFLoader();
         loader.register(parser => new VRMLoaderPlugin(parser));
 
-        const gltf = await loader.loadAsync(VRM_PATH);
+        // ── FIX #5 (MINOR): VRM load progress callback ──
+        const gltf = await loader.loadAsync(VRM_PATH, (xhr) => {
+            if (xhr.lengthComputable) {
+                const pct = Math.round((xhr.loaded / xhr.total) * 100);
+                console.info(`[LainVrmCharacter] Loading VRM: ${pct}% (${(xhr.loaded / 1024 / 1024).toFixed(1)} MB)`);
+            }
+        });
+
         const vrm  = gltf.userData.vrm;
         if (!vrm) throw new Error('No VRM data found in GLTF userData');
 
@@ -230,7 +283,8 @@ class LainVrmCharacter {
             const delta   = this._clock.getDelta();
             const elapsed = this._clock.elapsedTime;
             this._animate(elapsed, delta);
-            this._renderer.render(this._scene, this._camera);
+            // ── FIX #1 (MAJOR): use renderFrame() via EffectComposer, not renderer.render() ──
+            renderFrame();
         };
         this._raf = requestAnimationFrame(tick);
     }
@@ -344,4 +398,6 @@ class LainVrmCharacter {
     }
 }
 
+// Dispatch event so app.js can react without polling window.LainVrmCharacter
 window.LainVrmCharacter = LainVrmCharacter;
+document.dispatchEvent(new CustomEvent('vrm-character-ready', { detail: { LainVrmCharacter } }));
