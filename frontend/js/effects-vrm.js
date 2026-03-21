@@ -24,8 +24,12 @@ let _glitchTmr  = null;
  * @param {THREE.WebGLRenderer} renderer
  * @param {THREE.Scene}         scene
  * @param {THREE.Camera}        camera
+ * @param {Object}              [opts]
+ * @param {boolean}             [opts.mobile=false]  — reduced quality for mobile
  */
-export function initEffects(renderer, scene, camera) {
+export function initEffects(renderer, scene, camera, opts = {}) {
+    const { mobile = false } = opts;
+
     const size = new THREE.Vector2();
     renderer.getSize(size);
 
@@ -35,18 +39,19 @@ export function initEffects(renderer, scene, camera) {
     _composer.addPass(new RenderPass(scene, camera));
 
     // Unreal bloom — soft SEL glow on highlights
-    // strength 0.55: noticeable but not blown-out
-    // radius   0.6:  wider glow spread for dreamy look
-    // threshold 0.75: only bloom near-white highlights (Lain's hair, rim light)
-    _bloom = new UnrealBloomPass(size, 0.55, 0.6, 0.75);
+    // Desktop: strength 0.55, radius 0.6, threshold 0.75
+    // Mobile:  strength 0.30, radius 0.4, threshold 0.80 (cheaper)
+    const bloomStrength  = mobile ? 0.30 : 0.55;
+    const bloomRadius    = mobile ? 0.40 : 0.60;
+    const bloomThreshold = mobile ? 0.80 : 0.75;
+    _bloom = new UnrealBloomPass(size, bloomStrength, bloomRadius, bloomThreshold);
     _composer.addPass(_bloom);
 
-    // Film grain + very subtle scanlines — SEL CRT feel without obscuring detail
-    // noiseIntensity 0.25, scanlineIntensity 0.04 (almost invisible scanlines)
-    const film = new FilmPass(0.25, false);
-    // FilmPass r169 takes (noiseIntensity, grayscale)
-    // scanlines are rendered by psx.css body.scanlines::before; keep FilmPass for grain only
-    _composer.addPass(film);
+    // Film grain — disabled on mobile (expensive on low-end GPU)
+    if (!mobile) {
+        const film = new FilmPass(0.25, false);
+        _composer.addPass(film);
+    }
 
     // Glitch — disabled by default; only fires on state transitions (~200 ms burst)
     _glitchPass = new GlitchPass();

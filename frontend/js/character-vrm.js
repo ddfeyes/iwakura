@@ -7,9 +7,23 @@
 
 import * as THREE from 'three';
 import { GLTFLoader }                                 from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader }                                from 'three/addons/loaders/DRACOLoader.js';
 import { VRMLoaderPlugin, VRMUtils, VRMExpressionPresetName } from '@pixiv/three-vrm';
 import { initEffects, triggerGlitch, renderFrame, onEffectsResize } from './effects-vrm.js';
 import { initAtmosphere, updateAtmosphere }           from './atmosphere-vrm.js';
+
+// ── Device detection ──────────────────────────────────────────────────────────
+const _isMobile = (() => {
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const narrow = window.innerWidth < 768;
+    return coarse && narrow;
+})();
+
+// ── Mobile: 30 FPS cap (throttle) ────────────────────────────────────────────
+const _FRAME_INTERVAL = _isMobile ? 1000 / 30 : 0;  // 0 = unlimited on desktop
+
+// ── Delta cap: skip catch-up when tab was hidden (prevents large delta spikes) ─
+const _DELTA_MAX = 0.1;  // 100 ms — anything larger gets clamped
 
 const VRM_PATH  = 'models/lain.vrm';
 const CAM_FOV   = 28;    // tight portrait framing
@@ -52,6 +66,12 @@ class LainVrmCharacter {
 
         // Page visibility
         this._onVisibilityChange = this._handleVisibility.bind(this);
+
+        // Mobile FPS throttle
+        this._lastFrameTs = 0;
+
+        // Loading overlay DOM ref
+        this._loaderOverlay = null;
     }
 
     // ── Public API ────────────────────────────────────────────
@@ -68,12 +88,19 @@ class LainVrmCharacter {
         // Pause RAF when tab is hidden — fixes wasted GPU on hidden tab
         document.addEventListener('visibilitychange', this._onVisibilityChange);
 
+        // Show loading overlay
+        this._showLoader();
+
         try {
             await this._loadVRM();
         } catch (err) {
             console.warn('[LainVrmCharacter] VRM load failed:', err);
+            this._hideLoader(true);
             return;
         }
+
+        // Fade out + remove loading overlay
+        this._hideLoader();
 
         this._startLoop();
         this._scheduleBlink();
@@ -203,11 +230,11 @@ class LainVrmCharacter {
         rim.position.set(-1.0, 0.5, -1.0);
         this._scene.add(rim);
 
-        // Initialise EffectComposer (bloom + film grain + glitch)
-        initEffects(this._renderer, this._scene, this._camera);
+        // Initialise EffectComposer (bloom + film grain + glitch) — mobile gets reduced quality
+        initEffects(this._renderer, this._scene, this._camera, { mobile: _isMobile });
 
-        // Initialise atmosphere: dark background plane + ambient particles
-        initAtmosphere(this._scene);
+        // Initialise atmosphere — mobile gets reduced particle count (800 → 200)
+        initAtmosphere(this._scene, { particleCount: _isMobile ? 200 : 800 });
 
         // ResizeObserver — keep canvas, composer, and camera in sync with container
         if (this._el && window.ResizeObserver) {
@@ -229,16 +256,29 @@ class LainVrmCharacter {
     // ── VRM loading ───────────────────────────────────────────
 
     async _loadVRM() {
+        // DRACOLoader: wired for future DRACO-compressed VRM variants.
+        // Note: gltf-transform draco strips VRMC_* extensions (VRM1 spec),
+        // so production DRACO compression requires a VRM-aware pipeline
+        // (e.g. vrm-compress-draco or manual JSON patching). The current
+        // lain.vrm is uncompressed; DRACOLoader is a no-op for non-DRACO GLBs
+        // but adds zero overhead and makes the path future-proof.
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/libs/draco/');
+
         const loader = new GLTFLoader();
+        loader.setDRACOLoader(dracoLoader);
         loader.register(parser => new VRMLoaderPlugin(parser));
 
-        // ── FIX #5 (MINOR): VRM load progress callback ──
+        // Progress: update overlay bar + console
         const gltf = await loader.loadAsync(VRM_PATH, (xhr) => {
             if (xhr.lengthComputable) {
                 const pct = Math.round((xhr.loaded / xhr.total) * 100);
                 console.info(`[LainVrmCharacter] Loading VRM: ${pct}% (${(xhr.loaded / 1024 / 1024).toFixed(1)} MB)`);
+                this._updateLoaderProgress(pct);
             }
         });
+
+        dracoLoader.dispose();
 
         const vrm  = gltf.userData.vrm;
         if (!vrm) throw new Error('No VRM data found in GLTF userData');
@@ -283,12 +323,21 @@ class LainVrmCharacter {
     // ── Animation loop ────────────────────────────────────────
 
     _startLoop() {
-        const tick = () => {
+        const tick = (now) => {
             this._raf = requestAnimationFrame(tick);
-            const delta   = this._clock.getDelta();
-            const elapsed = this._clock.elapsedTime;
+
+            // Mobile 30fps cap: skip frame if too soon
+            if (_FRAME_INTERVAL > 0) {
+                if (now - this._lastFrameTs < _FRAME_INTERVAL) return;
+                this._lastFrameTs = now;
+            }
+
+            // Delta clamp: prevent large catch-up spikes after tab-switch
+            const rawDelta = this._clock.getDelta();
+            const delta    = Math.min(rawDelta, _DELTA_MAX);
+            const elapsed  = this._clock.elapsedTime;
+
             this._animate(elapsed, delta);
-            // ── FIX #1 (MAJOR): use renderFrame() via EffectComposer, not renderer.render() ──
             renderFrame();
         };
         this._raf = requestAnimationFrame(tick);
@@ -501,6 +550,44 @@ class LainVrmCharacter {
             if (i < steps.length) setTimeout(advance, 50);
         };
         advance();
+    }
+
+    // ── Loading overlay ───────────────────────────────────────
+
+    _showLoader() {
+        const overlay = document.createElement('div');
+        overlay.id = 'vrm-loader-overlay';
+        overlay.innerHTML = `
+            <div class="vrm-spinner"></div>
+            <div class="vrm-progress-bar"><div class="vrm-progress-fill" id="vrm-progress-fill"></div></div>
+            <div class="vrm-loader-text" id="vrm-loader-text">CONNECTING TO WIRED...</div>
+        `;
+        const target = this._el || document.body;
+        target.appendChild(overlay);
+        this._loaderOverlay = overlay;
+    }
+
+    _updateLoaderProgress(pct) {
+        const fill = document.getElementById('vrm-progress-fill');
+        const text = document.getElementById('vrm-loader-text');
+        if (fill) fill.style.width = `${pct}%`;
+        if (text) text.textContent = `LOADING ${pct}%`;
+    }
+
+    _hideLoader(immediate = false) {
+        if (!this._loaderOverlay) return;
+        const overlay = this._loaderOverlay;
+        this._loaderOverlay = null;
+
+        if (immediate) {
+            overlay.remove();
+            return;
+        }
+
+        // Fill to 100% then fade out
+        this._updateLoaderProgress(100);
+        overlay.classList.add('fade-out');
+        setTimeout(() => overlay.remove(), 550);
     }
 
     // ── Pose scheduler ────────────────────────────────────────
