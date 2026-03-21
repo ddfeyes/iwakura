@@ -185,6 +185,57 @@
         }, 3200);
     }
 
+    // ── Lain character loader (VRM → pixel-art fallback) ─────
+
+    /**
+     * Wait for window.LainVrmCharacter to be available (set by the ES module).
+     * Resolves immediately if already present, else waits for 'vrm-character-ready'
+     * event (dispatched by character-vrm.js after its module executes).
+     * Times out after 5 s to avoid hanging on missing/slow CDN.
+     */
+    function _waitForVrmClass() {
+        if (window.LainVrmCharacter) return Promise.resolve(window.LainVrmCharacter);
+        return new Promise(resolve => {
+            const timeout = setTimeout(() => {
+                document.removeEventListener('vrm-character-ready', handler);
+                resolve(null);
+            }, 5000);
+            function handler(e) {
+                clearTimeout(timeout);
+                resolve(e.detail?.LainVrmCharacter || window.LainVrmCharacter || null);
+            }
+            document.addEventListener('vrm-character-ready', handler, { once: true });
+        });
+    }
+
+    async function _initLainChar(scene) {
+        const charEl = document.getElementById('lain-char-container');
+
+        // FIX #2 (MAJOR): wait for ES module to register LainVrmCharacter before
+        // checking — avoids sync race where app.js runs before module scripts fire.
+        const VrmClass = await _waitForVrmClass();
+
+        if (VrmClass) {
+            try {
+                const resp = await fetch('models/lain.vrm', { method: 'HEAD' });
+                if (resp.ok) {
+                    lainChar = new VrmClass(charEl);
+                    await lainChar.init(scene);
+                    return;
+                }
+            } catch (err) {
+                // FIX #4 (MINOR): log VRM init errors instead of silently swallowing
+                console.warn('[app] VRM init failed, falling back to pixel art:', err);
+            }
+        }
+
+        // Fall back to Canvas 2D pixel art character
+        if (window.LainCharacter) {
+            lainChar = new LainCharacter(charEl);
+            lainChar.init(scene);
+        }
+    }
+
     // ── Hub (Three.js Orbital Nav) ────────────────────────────
 
     function initHub() {
@@ -218,11 +269,9 @@
             };
             orbNav.init();
 
-            // Init Lain as THREE.Sprite inside the Three.js scene (scene exists after init())
-            if (!lainChar && window.LainCharacter) {
-                const charEl = document.getElementById('lain-char-container');
-                lainChar = new LainCharacter(charEl);
-                lainChar.init(orbNav.scene);
+            // Init Lain character — try VRM first, fall back to pixel art
+            if (!lainChar) {
+                _initLainChar(orbNav.scene).catch(() => {});
             }
         } else {
             orbNav.resume();

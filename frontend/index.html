@@ -8,6 +8,16 @@
     <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/psx.css">
     <link rel="stylesheet" href="css/style.css">
+    <!-- Importmap: Three.js r169 + @pixiv/three-vrm for ES module character -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+            "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.4/lib/three-vrm.module.min.js"
+        }
+    }
+    </script>
 </head>
 <body class="scanlines">
 
@@ -282,6 +292,8 @@
 <script src="js/wired.js"></script>
 <script src="js/hotkeys.js"></script>
 <script src="js/character.js"></script>
+<script type="module" src="js/character-vrm.js"></script>
+<script type="module" src="js/effects-vrm.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
