@@ -143,36 +143,36 @@ async def kill_idle_ao_sessions() -> list[str]:
 
 async def get_openclaw_crons() -> list[dict]:
     """Fetch cron jobs via openclaw CLI (gateway /api/crons returns 404)."""
-    # Try openclaw cron list --json first
-    raw = await _run([_OPENCLAW, "cron", "list", "--json"], timeout=15)
-    if raw:
-        try:
-            data = json.loads(raw)
-            jobs = data if isinstance(data, list) else data.get("jobs", [])
-            result = []
-            for item in jobs:
-                result.append({
-                    "name": item.get("name", ""),
-                    "schedule": str(item.get("schedule", "")),
-                    "enabled": item.get("enabled", True),
-                    "last_run": item.get("lastRun", item.get("last_run", "")),
-                })
-            return result
-        except Exception:
-            pass
-
-    # Fallback: parse text output
+    import re as _re
+    # All output (plugins noise + table) goes to stdout.
+    # UUID-prefixed lines are actual cron rows; everything else is noise.
     raw_text = await _run([_OPENCLAW, "cron", "list"], timeout=15)
     if raw_text:
+        uuid_re = _re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s', _re.I)
+        status_kw = {"ok", "idle", "error", "running"}
         result = []
         for line in raw_text.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
+            if not uuid_re.match(line):
                 continue
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            # parts[0]=ID, parts[1]=Name, parts[2..]=Schedule words, then Next/Last/Status cols
+            name = parts[1]
+            schedule_parts = []
+            job_status = "ok"
+            for p in parts[2:]:
+                if p.lower() in status_kw:
+                    job_status = p.lower()
+                    break
+                # "in", "ago", numeric-only tokens mark the Next/Last columns
+                if p in ("in", "ago", "-") or (len(schedule_parts) >= 3 and p[:1].isdigit()):
+                    break
+                schedule_parts.append(p)
             result.append({
-                "name": line[:80],
-                "schedule": "",
-                "enabled": True,
+                "name": name,
+                "schedule": " ".join(schedule_parts),
+                "enabled": job_status != "error",
                 "last_run": "",
             })
         if result:
