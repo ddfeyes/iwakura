@@ -21,8 +21,8 @@ let _bounds       = null;   // {xMin,xMax,yMin,yMax,zMin,zMax}
  *
  * @param {THREE.Scene}  scene
  * @param {Object}       [opts]
- * @param {number}       [opts.particleCount=800]
- * @param {number}       [opts.bgZ=-0.8]   — Z position of background plane
+ * @param {number}       [opts.particleCount=800]  — pass 200 for mobile
+ * @param {number}       [opts.bgZ=-0.8]            — Z position of background plane
  */
 export function initAtmosphere(scene, opts = {}) {
     const {
