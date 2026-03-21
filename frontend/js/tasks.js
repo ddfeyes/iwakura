@@ -128,8 +128,28 @@
             return html;
         }
 
+        _renderGithubIssues(issues) {
+            if (!issues || issues.length === 0) return '';
+            let html = `
+                <div class="task-section-label" style="color:#00d4aa;margin-top:8px">GITHUB ISSUES</div>
+            `;
+            issues.forEach(issue => {
+                const labels = issue.labels && issue.labels.length
+                    ? ' (' + issue.labels.map(esc).join(', ') + ')'
+                    : '';
+                const date = issue.created_at ? issue.created_at.slice(0, 10) : '';
+                html += `<div class="task-wave-item">` +
+                    `<span class="cyan">[#${issue.number}]</span> ` +
+                    `<span class="dim">${esc(issue.title)}${esc(labels)}</span>` +
+                    (date ? ` <span class="dim" style="opacity:.55">— ${esc(date)}</span>` : '') +
+                    `</div>`;
+            });
+            html += '<div class="psy-rule"></div>';
+            return html;
+        }
+
         _render(data) {
-            const { tasks = [], metrics = {} } = data;
+            const { tasks = [], metrics = {}, github_issues = [] } = data;
 
             let html = '';
 
@@ -143,6 +163,9 @@
                 </div>
                 <div class="psy-rule"></div>
             `;
+
+            // GitHub issues section (top)
+            html += this._renderGithubIssues(github_issues);
 
             // Metrics bar
             html += this._renderMetrics(metrics);
