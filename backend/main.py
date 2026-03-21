@@ -25,6 +25,8 @@ LAIN_MEMORY = LAIN_BASE / "memory"
 LAIN_WORKSPACE = LAIN_BASE
 STATE_FILE = LAIN_BASE / "STATE.yaml"
 DIARY_HISTORY_FILE = pathlib.Path(__file__).parent / "diary_history.json"
+IWAKURA_BACKEND = pathlib.Path(__file__).parent
+BOTS_MEMORY = pathlib.Path("/Users/aivan/agents/bots/L3-009-iwakura/memory")
 
 app = FastAPI(title="Iwakura Platform", docs_url=None, redoc_url=None)
 
@@ -516,6 +518,39 @@ async def api_psyche():
     return JSONResponse(data)
 
 
+async def fetch_github_issues() -> list[dict]:
+    """Fetch open issues from ddfeyes repos via gh CLI."""
+    issues = []
+    repos = [
+        ("ddfeyes/iwakura", 20),
+        ("ddfeyes/svc-dash", 10),
+    ]
+    for repo, limit in repos:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "gh", "issue", "list",
+                "--repo", repo,
+                "--state", "open",
+                "--json", "number,title,labels,createdAt",
+                "--limit", str(limit),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            raw = json.loads(stdout.decode())
+            for issue in raw:
+                issues.append({
+                    "number": issue["number"],
+                    "title": issue["title"],
+                    "labels": [lbl["name"] for lbl in issue.get("labels", [])],
+                    "created_at": issue.get("createdAt", ""),
+                    "repo": repo,
+                })
+        except Exception:
+            pass
+    return issues
+
+
 @app.get("/api/tasks")
 async def api_tasks():
     state_path = LAIN_MEMORY / "STATE.yaml"
@@ -599,7 +634,8 @@ async def api_tasks():
                 "stats": {str(k): str(v) for k, v in stats.items()},
             })
 
-    return JSONResponse({"tasks": tasks_out, "metrics": metrics_out})
+    github_issues = await fetch_github_issues()
+    return JSONResponse({"tasks": tasks_out, "metrics": metrics_out, "github_issues": github_issues})
 
 
 @app.get("/api/search")
@@ -638,6 +674,12 @@ async def api_search(q: str = ""):
     memory_md = LAIN_WORKSPACE / "MEMORY.md"
     if memory_md.exists():
         files_to_check.append(memory_md)
+    # Iwakura backend source files
+    for f in sorted(IWAKURA_BACKEND.glob("*.py")):
+        files_to_check.append(f)
+    # Bots memory files
+    if BOTS_MEMORY.exists():
+        files_to_check.extend(sorted(BOTS_MEMORY.glob("*.md")))
 
     for f in files_to_check:
         if not f.is_file() or f.suffix not in (".md", ".txt", ".yaml", ".json"):
@@ -749,15 +791,18 @@ async def get_wired_events() -> list[dict]:
             except Exception:
                 pass
 
-    # CRON: openclaw cron jobs
+    # CRON: openclaw cron jobs (skip internal plugin logs)
     for job in openclaw_crons:
+        name = job.get("name", "")
+        if name.startswith("[plugins]"):
+            continue
         last_run = job.get("last_run") or ""
         events.append({
-            "id": f"cron-{job.get('name', '')}",
+            "id": f"cron-{name}",
             "ts": last_run if last_run else now.isoformat() + "Z",
             "source": "CRON",
             "level": "info" if job.get("enabled", True) else "warn",
-            "text": f"Cron: {job.get('name', '')[:60]}",
+            "text": f"Cron: {name[:60]}",
             "detail": job.get("schedule", ""),
         })
 
