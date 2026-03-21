@@ -682,7 +682,7 @@ async def api_search(q: str = ""):
         files_to_check.extend(sorted(BOTS_MEMORY.glob("*.md")))
 
     for f in files_to_check:
-        if not f.is_file() or f.suffix not in (".md", ".txt", ".yaml", ".json"):
+        if not f.is_file() or f.suffix not in (".md", ".txt", ".yaml", ".json", ".py"):
             continue
         try:
             content = f.read_text(errors="replace")
