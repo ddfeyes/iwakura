@@ -8,7 +8,8 @@
 import * as THREE from 'three';
 import { GLTFLoader }                                 from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, VRMExpressionPresetName } from '@pixiv/three-vrm';
-import { initEffects, triggerGlitch, renderFrame }    from './effects-vrm.js';
+import { initEffects, triggerGlitch, renderFrame, onEffectsResize } from './effects-vrm.js';
+import { initAtmosphere, updateAtmosphere }           from './atmosphere-vrm.js';
 
 const VRM_PATH  = 'models/lain.vrm';
 const CAM_FOV   = 28;    // tight portrait framing
@@ -202,10 +203,13 @@ class LainVrmCharacter {
         rim.position.set(-1.0, 0.5, -1.0);
         this._scene.add(rim);
 
-        // ── FIX #1 (MAJOR): initialise EffectComposer here ──
+        // Initialise EffectComposer (bloom + film grain + glitch)
         initEffects(this._renderer, this._scene, this._camera);
 
-        // ── FIX #3 (MINOR): ResizeObserver — keep canvas in sync with container ──
+        // Initialise atmosphere: dark background plane + ambient particles
+        initAtmosphere(this._scene);
+
+        // ResizeObserver — keep canvas, composer, and camera in sync with container
         if (this._el && window.ResizeObserver) {
             this._resizeObs = new ResizeObserver(entries => {
                 for (const entry of entries) {
@@ -214,6 +218,7 @@ class LainVrmCharacter {
                         this._renderer.setSize(width, height, false);
                         this._camera.aspect = width / height;
                         this._camera.updateProjectionMatrix();
+                        onEffectsResize(width, height);
                     }
                 }
             });
@@ -297,6 +302,9 @@ class LainVrmCharacter {
 
         // Per-state procedural bone animations with smooth state blending
         this._animateProcedural(t);
+
+        // Atmosphere: tick ambient particles
+        updateAtmosphere(delta, t);
 
         this._vrm.update(delta);
     }
