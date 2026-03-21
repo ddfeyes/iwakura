@@ -34,8 +34,6 @@ class LainVrmCharacter {
 
         // Talking mouth toggle
         this._talking   = false;
-        this._mouthOpen = false;
-        this._talkIv    = null;
 
         // Blink scheduler
         this._blinkTmr  = null;
@@ -104,15 +102,11 @@ class LainVrmCharacter {
     }
 
     onTalkStart() {
-        this._talking   = true;
-        this._mouthOpen = false;
+        this._talking = true;
         this.setState('talking');
-        this._stopTalkInterval();
-        this._talkIv = setInterval(() => { this._mouthOpen = !this._mouthOpen; }, 200);
     }
 
     onTalkEnd() {
-        this._stopTalkInterval();
         this._talking = false;
         this.setState('idle');
     }
@@ -127,7 +121,6 @@ class LainVrmCharacter {
         if (this._raf)      cancelAnimationFrame(this._raf);
         if (this._blinkTmr) clearTimeout(this._blinkTmr);
         if (this._poseTmr)  clearTimeout(this._poseTmr);
-        this._stopTalkInterval();
         this._raf = null;
     }
 
@@ -328,6 +321,11 @@ class LainVrmCharacter {
             bone.rotation.z = rz;
         };
 
+        setBone('neck',
+            0,
+            0,
+            L(prev.neckRz, curr.neckRz, blend)
+        );
         setBone('head',
             L(prev.headRx, curr.headRx, blend),
             L(prev.headRy, curr.headRy, blend),
@@ -373,6 +371,7 @@ class LainVrmCharacter {
         switch (state) {
             case 'idle':
                 return {
+                    neckRz: 0,
                     headRx: Math.sin(t * (Math.PI * 2 / 6)) * 0.02,      // ±0.02 rad, 6 s
                     headRy: 0,
                     headRz: Math.sin(t * (Math.PI * 2 / 8) + Math.PI * 0.25) * 0.012,
@@ -385,6 +384,7 @@ class LainVrmCharacter {
                 };
             case 'talking':
                 return {
+                    neckRz: 0,
                     headRx: Math.sin(t * (Math.PI * 2 / 2)) * 0.04,      // ±0.04 rad, 2 s nod
                     headRy: 0,
                     headRz: 0,
@@ -397,9 +397,10 @@ class LainVrmCharacter {
                 };
             case 'thinking':
                 return {
+                    neckRz: -0.12,                                         // neck carries the tilt
                     headRx: 0,
                     headRy: 0,
-                    headRz: 0.1 + Math.sin(t * (Math.PI * 2 / 8)) * 0.02, // +0.1 ± 0.02 slow
+                    headRz: Math.sin(t * (Math.PI * 2 / 8)) * 0.02,      // subtle oscillation on head
                     spineRx: 0,
                     spineRz: 0,
                     ruaRx: 0, ruaRy: 0,
@@ -409,9 +410,10 @@ class LainVrmCharacter {
                 };
             case 'curious':
                 return {
+                    neckRz: 0.12,                                          // neck carries the tilt
                     headRx: 0,
                     headRy: 0,
-                    headRz: -0.12,                                         // tilt opposite side
+                    headRz: 0,
                     spineRx: -0.03,                                        // lean back
                     spineRz: 0,
                     ruaRx: 0, ruaRy: 0,
@@ -419,8 +421,22 @@ class LainVrmCharacter {
                     rlaRx: 0,
                     luaRz: 0.15,
                 };
+            case 'surprised':
+                return {
+                    neckRz: 0,
+                    headRx: -0.08,                                         // slight head-back
+                    headRy: 0,
+                    headRz: 0,
+                    spineRx: -0.05,
+                    spineRz: 0,
+                    ruaRx: 0, ruaRy: 0,
+                    ruaRz: -0.2,                                           // arms slightly raised
+                    rlaRx: 0,
+                    luaRz: 0.2,
+                };
             default:
                 return {
+                    neckRz: 0,
                     headRx: 0, headRy: 0, headRz: 0,
                     spineRx: 0, spineRz: 0,
                     ruaRx: 0, ruaRy: 0, ruaRz: 0,
@@ -445,29 +461,12 @@ class LainVrmCharacter {
         // Clear expression overrides
         if (em) em.setValue(VRMExpressionPresetName.Surprised, 0);
 
+        // Bone poses for thinking/curious/idle/talking are owned by _animateProcedural.
+        // _applyStatePose only handles one-shot expression triggers (surprised).
         switch (s) {
-            case 'thinking': {
-                const neck = h.getNormalizedBoneNode('neck');
-                if (neck) neck.rotation.z = -0.12;
-                const rua = h.getNormalizedBoneNode('rightUpperArm');
-                if (rua) { rua.rotation.x = -1.2; rua.rotation.z = -0.3; }
-                const rla = h.getNormalizedBoneNode('rightLowerArm');
-                if (rla) rla.rotation.x = 0.8;
-                break;
-            }
-            case 'curious': {
-                const neck = h.getNormalizedBoneNode('neck');
-                if (neck) neck.rotation.z = 0.12;
-                const hd = h.getNormalizedBoneNode('head');
-                if (hd) hd.rotation.z = 0.05;
-                break;
-            }
-            case 'surprised': {
+            case 'surprised':
                 if (em) em.setValue(VRMExpressionPresetName.Surprised, 0.8);
                 break;
-            }
-            case 'idle':
-            case 'talking':
             default:
                 break;
         }
@@ -510,10 +509,6 @@ class LainVrmCharacter {
         }, 10000 + Math.random() * 15000);
     }
 
-    _stopTalkInterval() {
-        if (this._talkIv) { clearInterval(this._talkIv); this._talkIv = null; }
-        this._mouthOpen = false;
-    }
 }
 
 // Dispatch event so app.js can react without polling window.LainVrmCharacter
