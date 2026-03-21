@@ -185,6 +185,32 @@
         }, 3200);
     }
 
+    // ── Lain character loader (VRM → pixel-art fallback) ─────
+
+    async function _initLainChar(scene) {
+        const charEl = document.getElementById('lain-char-container');
+
+        // Try VRM character if module is loaded
+        if (window.LainVrmCharacter) {
+            try {
+                const resp = await fetch('models/lain.vrm', { method: 'HEAD' });
+                if (resp.ok) {
+                    lainChar = new LainVrmCharacter(charEl);
+                    await lainChar.init(scene);
+                    return;
+                }
+            } catch (_) {
+                // network error or file absent — fall through to pixel art
+            }
+        }
+
+        // Fall back to Canvas 2D pixel art character
+        if (window.LainCharacter) {
+            lainChar = new LainCharacter(charEl);
+            lainChar.init(scene);
+        }
+    }
+
     // ── Hub (Three.js Orbital Nav) ────────────────────────────
 
     function initHub() {
@@ -218,11 +244,9 @@
             };
             orbNav.init();
 
-            // Init Lain as THREE.Sprite inside the Three.js scene (scene exists after init())
-            if (!lainChar && window.LainCharacter) {
-                const charEl = document.getElementById('lain-char-container');
-                lainChar = new LainCharacter(charEl);
-                lainChar.init(orbNav.scene);
+            // Init Lain character — try VRM first, fall back to pixel art
+            if (!lainChar) {
+                _initLainChar(orbNav.scene).catch(() => {});
             }
         } else {
             orbNav.resume();
