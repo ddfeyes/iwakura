@@ -43,6 +43,11 @@ class LainVrmCharacter {
         // Pose scheduler
         this._poseTmr   = null;
 
+        // State blend (smooth transition between animation states ~0.5 s)
+        this._prevState  = 'idle';
+        this._blendStart = 0;
+        this._blendDur   = 0.5;
+
         // ResizeObserver
         this._resizeObs = null;
 
@@ -82,6 +87,8 @@ class LainVrmCharacter {
      */
     setState(s) {
         if (this._state === s) return;
+        this._prevState  = this._state;
+        this._blendStart = this._clock ? this._clock.elapsedTime : 0;
         this._state = s;
         this._applyStatePose(s);
         triggerGlitch(); // SEL atmosphere effect on state transition
@@ -292,23 +299,134 @@ class LainVrmCharacter {
     _animate(t, delta) {
         if (!this._vrm) return;
 
-        // ── Idle breathing: sin wave on vrm.scene.position.y ──
-        const breathY = Math.sin((t / 8) * Math.PI * 2) * 0.008;
-        this._vrm.scene.position.y = breathY;
+        // Breathing: subtle scene.position.y oscillation for all states
+        this._vrm.scene.position.y = Math.sin((t / 8) * Math.PI * 2) * 0.008;
 
-        // ── Subtle head bob ──
-        const head = this._vrm.humanoid?.getNormalizedBoneNode('head');
-        if (head) {
-            head.rotation.z = Math.sin((t / 8) * Math.PI * 2 + Math.PI * 0.25) * 0.012;
-        }
-
-        // ── Talking mouth morph ──
-        const em = this._vrm.expressionManager;
-        if (em) {
-            em.setValue(VRMExpressionPresetName.Aa, this._talking && this._mouthOpen ? 0.6 : 0);
-        }
+        // Per-state procedural bone animations with smooth state blending
+        this._animateProcedural(t);
 
         this._vrm.update(delta);
+    }
+
+    _animateProcedural(t) {
+        if (!this._vrm?.humanoid) return;
+        const h  = this._vrm.humanoid;
+        const em = this._vrm.expressionManager;
+        const L  = THREE.MathUtils.lerp;
+
+        // Blend factor: 0 = prevState, 1 = currState (ramps over _blendDur seconds)
+        const blend = Math.min(1, (t - this._blendStart) / this._blendDur);
+
+        const prev = this._getStateAnim(this._prevState, t);
+        const curr = this._getStateAnim(this._state, t);
+
+        const setBone = (name, rx, ry, rz) => {
+            const bone = h.getNormalizedBoneNode(name);
+            if (!bone) return;
+            bone.rotation.x = rx;
+            bone.rotation.y = ry;
+            bone.rotation.z = rz;
+        };
+
+        setBone('head',
+            L(prev.headRx, curr.headRx, blend),
+            L(prev.headRy, curr.headRy, blend),
+            L(prev.headRz, curr.headRz, blend)
+        );
+        setBone('spine',
+            L(prev.spineRx, curr.spineRx, blend),
+            0,
+            L(prev.spineRz, curr.spineRz, blend)
+        );
+        setBone('rightUpperArm',
+            L(prev.ruaRx, curr.ruaRx, blend),
+            L(prev.ruaRy, curr.ruaRy, blend),
+            L(prev.ruaRz, curr.ruaRz, blend)
+        );
+        setBone('rightLowerArm',
+            L(prev.rlaRx, curr.rlaRx, blend),
+            0, 0
+        );
+        setBone('leftUpperArm',
+            0, 0,
+            L(prev.luaRz, curr.luaRz, blend)
+        );
+
+        if (em) {
+            // Mouth: smooth sin-wave during talking, reset otherwise
+            em.setValue(VRMExpressionPresetName.Aa,
+                this._talking ? Math.abs(Math.sin(t * 3)) * 0.4 : 0
+            );
+
+            // Thinking: relaxed expression fades in/out with blend
+            if (this._state === 'thinking') {
+                em.setValue(VRMExpressionPresetName.Relaxed, L(0, 0.3, blend));
+            } else if (this._prevState === 'thinking' && blend < 1) {
+                em.setValue(VRMExpressionPresetName.Relaxed, L(0.3, 0, blend));
+            } else {
+                em.setValue(VRMExpressionPresetName.Relaxed, 0);
+            }
+        }
+    }
+
+    _getStateAnim(state, t) {
+        switch (state) {
+            case 'idle':
+                return {
+                    headRx: Math.sin(t * (Math.PI * 2 / 6)) * 0.02,      // ±0.02 rad, 6 s
+                    headRy: 0,
+                    headRz: Math.sin(t * (Math.PI * 2 / 8) + Math.PI * 0.25) * 0.012,
+                    spineRx: 0,
+                    spineRz: 0,
+                    ruaRx: 0, ruaRy: 0,
+                    ruaRz:  Math.sin(t * (Math.PI * 2 / 8)) * 0.01,       // ±0.01 rad
+                    rlaRx: 0,
+                    luaRz: -Math.sin(t * (Math.PI * 2 / 8)) * 0.01,
+                };
+            case 'talking':
+                return {
+                    headRx: Math.sin(t * (Math.PI * 2 / 2)) * 0.04,      // ±0.04 rad, 2 s nod
+                    headRy: 0,
+                    headRz: 0,
+                    spineRx: 0.05,                                         // slight lean forward
+                    spineRz: 0,
+                    ruaRx: 0, ruaRy: 0,
+                    ruaRz: Math.sin(t * (Math.PI * 2 / 3)) * 0.1,        // ±0.1 rad, 3 s gesture
+                    rlaRx: 0,
+                    luaRz: 0,
+                };
+            case 'thinking':
+                return {
+                    headRx: 0,
+                    headRy: 0,
+                    headRz: 0.1 + Math.sin(t * (Math.PI * 2 / 8)) * 0.02, // +0.1 ± 0.02 slow
+                    spineRx: 0,
+                    spineRz: 0,
+                    ruaRx: 0, ruaRy: 0,
+                    ruaRz: -0.3,                                           // arm raised to chin
+                    rlaRx: -0.5,
+                    luaRz: 0,
+                };
+            case 'curious':
+                return {
+                    headRx: 0,
+                    headRy: 0,
+                    headRz: -0.12,                                         // tilt opposite side
+                    spineRx: -0.03,                                        // lean back
+                    spineRz: 0,
+                    ruaRx: 0, ruaRy: 0,
+                    ruaRz: -0.15,                                          // both arms spread
+                    rlaRx: 0,
+                    luaRz: 0.15,
+                };
+            default:
+                return {
+                    headRx: 0, headRy: 0, headRz: 0,
+                    spineRx: 0, spineRz: 0,
+                    ruaRx: 0, ruaRy: 0, ruaRz: 0,
+                    rlaRx: 0, luaRz: 0,
+                };
+        }
     }
 
     // ── State pose application ────────────────────────────────
