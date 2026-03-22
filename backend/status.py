@@ -7,7 +7,6 @@ import pathlib
 import platform
 import re
 import shutil
-import subprocess
 import time
 import yaml
 from datetime import datetime, timedelta
