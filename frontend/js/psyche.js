@@ -88,6 +88,8 @@
                 const lastFile = (agent.last_activity || {}).file || '';
                 const ageSecs  = (agent.last_activity || {}).age_seconds;
                 const ageStr   = ageSecs != null ? fmtAge(ageSecs) : '—';
+                const hbSecs   = (agent.heartbeat || {}).age_seconds;
+                const hbStr    = hbSecs  != null ? fmtAge(hbSecs)  : null;
                 const lastAction = (agent.last_action || '').slice(0, 60);
                 const errBadge = agent.consecutive_errors > 0
                     ? `<span class="agent-err-badge">ERR×${agent.consecutive_errors}</span>`
@@ -104,7 +106,8 @@
                     ${lastAction ? `<div class="agent-last-action dim">${esc(lastAction)}</div>` : ''}
                     <div class="agent-meta dim">
                         ${lastFile ? `<span>${esc(lastFile)}</span>` : ''}
-                        ${ageSecs != null ? `<span>${esc(ageStr)} ago</span>` : ''}
+                        ${ageSecs != null ? `<span>mem: ${esc(ageStr)} ago</span>` : ''}
+                        ${hbStr   != null ? `<span>hb: ${esc(hbStr)} ago</span>`  : ''}
                     </div>
                 </div>`;
             }

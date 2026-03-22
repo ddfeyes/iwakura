@@ -19,7 +19,9 @@ class StatusDashboard {
         this._container  = null;
         this._tsEl       = null;
         this._intervalId = null;
+        this._agentsTimer = null;
         this._loading    = false;
+        this._agents     = [];
     }
 
     init(containerEl, timestampEl) {
@@ -28,6 +30,9 @@ class StatusDashboard {
         this.refresh();
         // Auto-refresh every 10s
         this._intervalId = setInterval(() => this.refresh(), 10000);
+        // Agents refresh every 60s (less frequent — file I/O heavy)
+        this._fetchAgents();
+        this._agentsTimer = setInterval(() => this._fetchAgents(), 60000);
     }
 
     stop() {
@@ -35,6 +40,19 @@ class StatusDashboard {
             clearInterval(this._intervalId);
             this._intervalId = null;
         }
+        if (this._agentsTimer) {
+            clearInterval(this._agentsTimer);
+            this._agentsTimer = null;
+        }
+    }
+
+    async _fetchAgents() {
+        try {
+            const res = await fetch('/api/psyche/agents');
+            if (!res.ok) return;
+            const data = await res.json();
+            this._agents = (data.agents || []).filter(a => !a.is_bot);
+        } catch (_) {}
     }
 
     async refresh() {
@@ -400,12 +418,67 @@ class StatusDashboard {
             </div>
         `;
 
+        // ── AGENTS MAP ───────────────────────────────────────────
+        html += this._renderAgentsMap();
+
         el.innerHTML = html;
 
         const killBtn = document.getElementById('kill-idle-btn');
         if (killBtn) {
             killBtn.addEventListener('click', () => this._killIdleSessions());
         }
+    }
+
+    _fmtHbAge(seconds) {
+        if (seconds == null) return '—';
+        if (seconds < 60)    return seconds + 's';
+        if (seconds < 3600)  return Math.floor(seconds / 60) + 'm';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
+        return Math.floor(seconds / 86400) + 'd';
+    }
+
+    _renderAgentsMap() {
+        const agents = this._agents;
+
+        const STATUS_COLOR = { active: '#00ff88', idle: '#8b7cc8', error: '#ff4444' };
+        const STATUS_DOT   = { active: '●', idle: '○', error: '✕' };
+
+        const cardHtml = (agents.length > 0 ? agents : []).map(agent => {
+            const color  = STATUS_COLOR[agent.status] || '#8b7cc8';
+            const dot    = STATUS_DOT[agent.status]  || '○';
+            const score  = agent.health_score || 0;
+            const bars   = Math.round(score / 10);
+            const barStr = '█'.repeat(bars) + '░'.repeat(10 - bars);
+            const hb     = agent.heartbeat || {};
+            const hbAge  = hb.age_seconds != null ? this._fmtHbAge(hb.age_seconds) + ' ago' : '—';
+            const errBadge = agent.consecutive_errors > 0
+                ? `<span class="agent-err-badge">ERR×${agent.consecutive_errors}</span>` : '';
+
+            return `<div class="agent-card agent-card-${esc(agent.status)}">
+                <div class="agent-card-header">
+                    <span class="agent-status-dot" style="color:${esc(color)}">${dot}</span>
+                    <span class="agent-name">${esc(agent.name)}</span>
+                    ${errBadge}
+                    <span class="agent-role dim">${esc(agent.role)}</span>
+                </div>
+                <div class="agent-health-bar" title="${score}/100">${barStr}</div>
+                <div class="agent-meta dim">
+                    <span>hb: ${esc(hbAge)}</span>
+                </div>
+            </div>`;
+        }).join('');
+
+        const placeholder = agents.length === 0
+            ? '<div class="srow"><span class="srow-label dim">LOADING AGENT DATA...</span></div>'
+            : '';
+
+        return `
+            <div class="status-card full">
+                <div class="status-card-title">AGENTS MAP (${agents.length})</div>
+                ${placeholder}
+                <div class="status-agents-grid">${cardHtml}</div>
+            </div>
+        `;
     }
 }
 

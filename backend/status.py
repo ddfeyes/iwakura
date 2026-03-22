@@ -648,6 +648,25 @@ def _get_last_memory_activity(agent_path: pathlib.Path) -> dict:
         return {}
 
 
+def _get_heartbeat_info(agent_path: pathlib.Path) -> dict:
+    """Get HEARTBEAT.md mtime and first-line excerpt."""
+    hb = agent_path / "HEARTBEAT.md"
+    if not hb.exists():
+        return {}
+    try:
+        stat = hb.stat()
+        age_secs = int(time.time() - stat.st_mtime)
+        content = hb.read_text(errors="replace")
+        excerpt = next((ln.strip() for ln in content.splitlines() if ln.strip()), "")[:80]
+        return {
+            "age_seconds": age_secs,
+            "mtime": datetime.fromtimestamp(stat.st_mtime).isoformat() + "Z",
+            "excerpt": excerpt,
+        }
+    except Exception:
+        return {}
+
+
 def _infer_agent_health(state: dict, last_activity: dict) -> dict:
     """Infer health status from state and last activity."""
     status_raw = str(state.get("status", "")).lower()
@@ -694,6 +713,7 @@ def get_all_agents_health() -> list[dict]:
         agent_path = agent_def["path"]
         state = _read_agent_state(agent_path)
         last_activity = _get_last_memory_activity(agent_path)
+        heartbeat = _get_heartbeat_info(agent_path)
         health = _infer_agent_health(state, last_activity)
 
         # Extract last action from state
@@ -716,6 +736,7 @@ def get_all_agents_health() -> list[dict]:
             "consecutive_errors": health["consecutive_errors"],
             "last_action": str(last_action)[:100],
             "last_activity": last_activity,
+            "heartbeat": heartbeat,
             "state_summary": {
                 k: str(v)[:80]
                 for k, v in list(state.items())[:5]
@@ -731,6 +752,7 @@ def get_all_agents_health() -> list[dict]:
                 continue
             state = _read_agent_state(bot_dir)
             last_activity = _get_last_memory_activity(bot_dir)
+            heartbeat = _get_heartbeat_info(bot_dir)
             health = _infer_agent_health(state, last_activity)
 
             # Read IDENTITY.md for name/role
@@ -768,6 +790,7 @@ def get_all_agents_health() -> list[dict]:
                 "consecutive_errors": health["consecutive_errors"],
                 "last_action": str(last_action)[:100],
                 "last_activity": last_activity,
+                "heartbeat": heartbeat,
                 "state_summary": {
                     k: str(v)[:80]
                     for k, v in list(state.items())[:4]
