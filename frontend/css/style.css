@@ -1385,3 +1385,162 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
     box-shadow: 0 0 18px rgba(255,68,136,0.35);
 }
 .nav-label-item[data-target="search"] .nav-label-code { color: #ff4488; }
+
+/* ── Phase 6: Filter buttons ─────────────────────────────────────────────── */
+.wired-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.wired-filter-btn {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--dim);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s;
+}
+.wired-filter-btn:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+}
+.wired-filter-btn.active {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border-color: rgba(255,255,255,0.3);
+}
+.wired-filter-btn.wired-src-orange.active { border-color: var(--orange); color: var(--orange); }
+.wired-filter-btn.wired-src-cyan.active   { border-color: var(--cyan);   color: var(--cyan);   }
+.wired-filter-btn.wired-src-purple.active { border-color: var(--purple); color: var(--purple); }
+.wired-filter-btn.wired-src-green.active  { border-color: var(--green);  color: var(--green);  }
+.wired-filter-btn.wired-src-yellow.active { border-color: #ffcc00;       color: #ffcc00;       }
+
+/* Search filters */
+.search-filters {
+    display: flex;
+    gap: 6px;
+    padding: 6px 0 10px;
+}
+
+.search-filter-btn {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--dim);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s;
+}
+.search-filter-btn:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+}
+.search-filter-btn.active {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border-color: rgba(255,255,255,0.3);
+}
+.search-filter-btn.result-source-diary.active  { border-color: var(--orange); color: var(--orange); }
+.search-filter-btn.result-source-memory.active { border-color: var(--cyan);   color: var(--cyan);   }
+
+/* ── Phase 6: Per-agent health grid ─────────────────────────────────────── */
+.psyche-agents-grid-wrap {
+    margin-top: 4px;
+}
+
+.psyche-agents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+    padding: 6px 0 12px;
+}
+
+.agent-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 3px;
+    padding: 8px 10px;
+    font-size: 0.72rem;
+    transition: border-color 0.2s;
+}
+.agent-card:hover {
+    background: rgba(255,255,255,0.05);
+}
+.agent-card-active { border-left: 2px solid var(--green); }
+.agent-card-idle   { border-left: 2px solid var(--purple); }
+.agent-card-error  { border-left: 2px solid var(--red); }
+
+.agent-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.agent-status-dot {
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
+.agent-name {
+    font-weight: bold;
+    color: #e0e0e0;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+}
+
+.agent-role {
+    font-size: 0.6rem;
+    color: var(--dim);
+    margin-left: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
+}
+
+.agent-health-bar {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: -0.05em;
+    margin-bottom: 4px;
+}
+
+.agent-last-action {
+    font-size: 0.62rem;
+    color: var(--dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.agent-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 0.58rem;
+    color: rgba(255,255,255,0.3);
+}
+
+.agent-err-badge {
+    font-size: 0.55rem;
+    background: rgba(255,68,68,0.2);
+    color: var(--red);
+    border: 1px solid rgba(255,68,68,0.4);
+    border-radius: 2px;
+    padding: 1px 4px;
+}
+
+/* sdot-d for dimmed dot */
+.sdot-d { background: rgba(255,255,255,0.15); }

@@ -107,7 +107,7 @@ class StatusDashboard {
     }
 
     _render(el, data) {
-        const { crons = [], ao_sessions, ao_sessions_old_count, openclaw_crons, docker = [], memory = {}, lain = {} } = data;
+        const { crons = [], ao_sessions, ao_sessions_old_count, openclaw_crons, docker = [], memory = {}, lain = {}, cpu = {}, disk = {}, claude_usage = {} } = data;
         const healthScore = data.health_score ?? 100;
         const healthLabel = data.health_label || 'OPTIMAL';
         let html = '';
@@ -155,6 +155,85 @@ class StatusDashboard {
                     <span style="color:${barColor}">${pct}% USED</span>
                     <span>${esc(used)} used &nbsp;·&nbsp; ${esc(free)} free</span>
                 </div>
+            </div>
+        `;
+
+        // ── CPU Usage ────────────────────────────────────────────
+        const cpuPct   = cpu.percent || 0;
+        const cpuIdle  = cpu.idle    || (100 - cpuPct);
+        const cpuColor = cpuPct > 85 ? 'var(--red)' : cpuPct > 60 ? 'var(--orange)' : 'var(--green)';
+
+        html += `
+            <div class="status-card">
+                <div class="status-card-title">CPU USAGE</div>
+                <div class="mem-bar-wrap">
+                    <div class="mem-bar-fill" style="width:${cpuPct}%;background:${cpuColor}"></div>
+                </div>
+                <div class="mem-stats">
+                    <span style="color:${cpuColor}">${cpuPct}% USED</span>
+                    <span>${esc(String(cpuIdle))}% idle</span>
+                </div>
+            </div>
+        `;
+
+        // ── Disk Usage ───────────────────────────────────────────
+        const diskPct   = disk.percent || 0;
+        const diskUsed  = disk.used    || '?';
+        const diskFree  = disk.free    || '?';
+        const diskTotal = disk.total   || '?';
+        const diskColor = diskPct > 90 ? 'var(--red)' : diskPct > 75 ? 'var(--orange)' : 'var(--purple)';
+
+        html += `
+            <div class="status-card">
+                <div class="status-card-title">DISK USAGE${disk.mount ? ' <span class="dim">(' + esc(disk.mount) + ')</span>' : ''}</div>
+                <div class="mem-bar-wrap">
+                    <div class="mem-bar-fill" style="width:${diskPct}%;background:${diskColor}"></div>
+                </div>
+                <div class="mem-stats">
+                    <span style="color:${diskColor}">${diskPct}% USED</span>
+                    <span>${esc(diskUsed)} used &nbsp;·&nbsp; ${esc(diskFree)} free of ${esc(diskTotal)}</span>
+                </div>
+            </div>
+        `;
+
+        // ── Claude API Usage ─────────────────────────────────────
+        const cl5h   = claude_usage.tokens_5h   || 0;
+        const cl7d   = claude_usage.tokens_7d   || 0;
+        const clReq5 = claude_usage.requests_5h || 0;
+        const clReq7 = claude_usage.requests_7d || 0;
+        const clSrc  = claude_usage.source || 'n/a';
+
+        // Format token counts
+        function fmtTokens(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+            return String(n);
+        }
+
+        const modelBreakdown = claude_usage.model_breakdown_7d || {};
+        const modelRows = Object.entries(modelBreakdown).slice(0, 4).map(([model, tokens]) => `
+            <div class="srow">
+                <div class="sdot sdot-b"></div>
+                <span class="srow-label">${esc(model.split('/').pop())}</span>
+                <span class="srow-val">${esc(fmtTokens(tokens))} tokens</span>
+            </div>
+        `).join('');
+
+        html += `
+            <div class="status-card">
+                <div class="status-card-title">CLAUDE API USAGE</div>
+                <div class="srow">
+                    <div class="sdot sdot-o"></div>
+                    <span class="srow-label">5h window</span>
+                    <span class="srow-val orange">${esc(fmtTokens(cl5h))} tokens &nbsp;·&nbsp; ${clReq5} requests</span>
+                </div>
+                <div class="srow">
+                    <div class="sdot sdot-b"></div>
+                    <span class="srow-label">7d window</span>
+                    <span class="srow-val">${esc(fmtTokens(cl7d))} tokens &nbsp;·&nbsp; ${clReq7} requests</span>
+                </div>
+                ${modelRows || '<div class="srow"><span class="srow-label dim">model breakdown unavailable</span></div>'}
+                <div class="srow"><span class="srow-label dim">source: ${esc(clSrc)}</span></div>
             </div>
         `;
 

@@ -5,15 +5,19 @@ import logging
 import os
 import pathlib
 import platform
+import re
 import shutil
+import subprocess
 import time
 import yaml
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 LAIN_WORKSPACE = pathlib.Path.home() / "agents" / "lain"
 LAIN_MEMORY = LAIN_WORKSPACE / "memory"
+AGENTS_BASE = pathlib.Path.home() / "agents"
+BOTS_BASE = pathlib.Path.home() / "agents" / "bots"
 
 _OPENCLAW = shutil.which("openclaw") or "/usr/local/bin/openclaw"
 
@@ -234,6 +238,197 @@ async def get_docker_status() -> list[dict]:
     return containers
 
 
+async def get_cpu_usage() -> dict:
+    """Get CPU usage percentage (macOS + Linux)."""
+    try:
+        if platform.system() == "Darwin":
+            # Use top in single-sample mode
+            raw = await _run(["top", "-l", "1", "-n", "0", "-s", "0"], timeout=8)
+            for line in raw.splitlines():
+                if "CPU usage:" in line:
+                    # "CPU usage: 12.50% user, 8.33% sys, 79.16% idle"
+                    m = re.search(r'(\d+\.?\d*)\s*%\s*idle', line)
+                    if m:
+                        idle = float(m.group(1))
+                        used = round(100.0 - idle, 1)
+                        return {"percent": used, "idle": round(idle, 1)}
+        else:
+            import psutil
+            cpu_pct = psutil.cpu_percent(interval=0.5)
+            return {"percent": round(cpu_pct, 1), "idle": round(100 - cpu_pct, 1)}
+    except Exception as e:
+        logger.warning("get_cpu_usage failed: %s", e)
+    return {"percent": 0.0, "idle": 100.0}
+
+
+async def get_disk_usage() -> dict:
+    """Get disk usage for the root filesystem."""
+    try:
+        raw = await _run(["df", "-k", "/"], timeout=5)
+        lines = raw.splitlines()
+        if len(lines) >= 2:
+            parts = lines[1].split()
+            if len(parts) >= 5:
+                total_kb = int(parts[1])
+                used_kb  = int(parts[2])
+                avail_kb = int(parts[3])
+                def gb(kb: int) -> str:
+                    return f"{kb / (1024 * 1024):.1f} GB"
+                pct = round(used_kb / max(total_kb, 1) * 100, 1)
+                return {
+                    "total":   gb(total_kb),
+                    "used":    gb(used_kb),
+                    "free":    gb(avail_kb),
+                    "percent": pct,
+                    "mount":   "/",
+                }
+    except Exception as e:
+        logger.warning("get_disk_usage failed: %s", e)
+    return {"total": "?", "used": "?", "free": "?", "percent": 0, "mount": "/"}
+
+
+def _get_claude_usage_from_logs() -> dict:
+    """Parse openclaw logs to extract Claude API token usage (5h and 7d rolling windows).
+
+    Returns approximate usage metrics based on request/token logs.
+    Falls back to 0 values if logs unavailable.
+    """
+    result = {
+        "tokens_5h": 0,
+        "tokens_7d": 0,
+        "requests_5h": 0,
+        "requests_7d": 0,
+        "estimated": True,  # Always estimated from logs
+    }
+
+    log_paths = [
+        pathlib.Path.home() / ".openclaw" / "logs",
+        pathlib.Path("/tmp/openclaw"),
+    ]
+
+    now = datetime.utcnow()
+    cutoff_5h = now - timedelta(hours=5)
+    cutoff_7d  = now - timedelta(days=7)
+
+    # Try to find any usage/token logs
+    for log_dir in log_paths:
+        if not log_dir.exists():
+            continue
+        for log_file in sorted(log_dir.glob("*.log"), reverse=True)[:10]:
+            try:
+                content = log_file.read_text(errors="replace")
+                for line in content.splitlines():
+                    # Look for lines like: [timestamp] tokens: 1234 or "usage": {"input_tokens": ...}
+                    ts_match = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', line)
+                    if not ts_match:
+                        continue
+                    try:
+                        line_ts = datetime.fromisoformat(ts_match.group(1))
+                    except ValueError:
+                        continue
+
+                    token_match = re.search(r'"total_tokens"\s*:\s*(\d+)', line)
+                    if not token_match:
+                        token_match = re.search(r'tokens\s*[:=]\s*(\d+)', line)
+                    if token_match:
+                        tokens = int(token_match.group(1))
+                        if line_ts >= cutoff_7d:
+                            result["tokens_7d"] += tokens
+                            result["requests_7d"] += 1
+                        if line_ts >= cutoff_5h:
+                            result["tokens_5h"] += tokens
+                            result["requests_5h"] += 1
+            except Exception:
+                continue
+
+    return result
+
+
+def get_claude_usage() -> dict:
+    """Get Claude API usage metrics.
+
+    Reads from openclaw data.db usage records or log files.
+    Returns 5h and 7d rolling window stats.
+    """
+    # Try openclaw data.db first (sqlite)
+    db_path = pathlib.Path.home() / ".openclaw" / "data.db"
+    if db_path.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+
+            now_ts = datetime.utcnow().timestamp()
+            ts_5h  = now_ts - 5 * 3600
+            ts_7d  = now_ts - 7 * 24 * 3600
+
+            # Check available tables
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = {row[0] for row in cur.fetchall()}
+
+            tokens_5h = 0
+            tokens_7d = 0
+            reqs_5h   = 0
+            reqs_7d   = 0
+            model_breakdown = {}
+
+            if "usage" in tables:
+                # usage table with timestamp, tokens, model columns
+                for window_ts, is_5h in [(ts_5h, True), (ts_7d, False)]:
+                    cur.execute(
+                        "SELECT SUM(tokens), COUNT(*) FROM usage WHERE timestamp >= ?",
+                        (window_ts,)
+                    )
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        if is_5h:
+                            tokens_5h, reqs_5h = int(row[0]), int(row[1])
+                        else:
+                            tokens_7d, reqs_7d = int(row[0]), int(row[1])
+
+                # Model breakdown
+                cur.execute(
+                    "SELECT model, SUM(tokens) FROM usage WHERE timestamp >= ? GROUP BY model",
+                    (ts_7d,)
+                )
+                for row in cur.fetchall():
+                    if row[0]:
+                        model_breakdown[str(row[0])] = int(row[1] or 0)
+
+            elif "completions" in tables:
+                # completions table
+                for window_ts, is_5h in [(ts_5h, True), (ts_7d, False)]:
+                    cur.execute(
+                        "SELECT SUM(total_tokens), COUNT(*) FROM completions WHERE created_at >= ?",
+                        (window_ts,)
+                    )
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        if is_5h:
+                            tokens_5h, reqs_5h = int(row[0]), int(row[1])
+                        else:
+                            tokens_7d, reqs_7d = int(row[0]), int(row[1])
+
+            conn.close()
+
+            return {
+                "tokens_5h": tokens_5h,
+                "tokens_7d": tokens_7d,
+                "requests_5h": reqs_5h,
+                "requests_7d": reqs_7d,
+                "model_breakdown_7d": model_breakdown,
+                "source": "db",
+            }
+        except Exception as e:
+            logger.debug("Claude usage from DB failed: %s", e)
+
+    # Fallback: parse logs
+    log_usage = _get_claude_usage_from_logs()
+    log_usage["source"] = "logs"
+    return log_usage
+
+
 async def get_memory_usage() -> dict:
     if platform.system() == "Darwin":
         raw = await _run(["vm_stat"])
@@ -352,13 +547,19 @@ def compute_health_score(
 
 
 async def get_full_status() -> dict:
-    crons, docker, memory, ao_result, openclaw_crons = await asyncio.gather(
+    crons, docker, memory, ao_result, openclaw_crons, cpu, disk = await asyncio.gather(
         get_cron_status(),
         get_docker_status(),
         get_memory_usage(),
         get_ao_sessions(),
         get_openclaw_crons(),
+        get_cpu_usage(),
+        get_disk_usage(),
     )
+
+    # Claude usage is synchronous (sqlite/log read), run in executor
+    loop = asyncio.get_event_loop()
+    claude_usage = await loop.run_in_executor(None, get_claude_usage)
 
     lain_state = get_lain_state()
     initiative = get_initiative_state()
@@ -377,9 +578,203 @@ async def get_full_status() -> dict:
         "openclaw_crons": openclaw_crons,
         "docker": docker,
         "memory": memory,
+        "cpu": cpu,
+        "disk": disk,
+        "claude_usage": claude_usage,
         "lain": {
             "state": lain_state,
             "initiative": initiative,
             "memory_files": get_memory_file_stats(),
         },
     }
+
+
+# ── Per-agent health data ──────────────────────────────────────────────────────
+
+# Core agents with their workspace paths
+AGENTS_REGISTRY = [
+    {"id": "lain",       "name": "Lain",       "role": "Orchestrator",      "path": AGENTS_BASE / "lain"},
+    {"id": "masami",     "name": "Masami",      "role": "Code Review",       "path": AGENTS_BASE / "masami"},
+    {"id": "navi",       "name": "NAVI",        "role": "DevOps / Deploy",   "path": AGENTS_BASE / "navi"},
+    {"id": "psyche",     "name": "Psyche",      "role": "Health Monitor",    "path": AGENTS_BASE / "psyche"},
+    {"id": "the-wired",  "name": "The Wired",   "role": "Research",          "path": AGENTS_BASE / "the-wired"},
+    {"id": "protocol7",  "name": "Protocol7",   "role": "Router",            "path": AGENTS_BASE / "protocol7"},
+    {"id": "touko",      "name": "Touko",       "role": "Reflection",        "path": AGENTS_BASE / "touko"},
+    {"id": "mika",       "name": "Mika",        "role": "Visual Director",   "path": AGENTS_BASE / "mika"},
+]
+
+
+def _read_agent_state(agent_path: pathlib.Path) -> dict:
+    """Read STATE.yaml from an agent workspace."""
+    for name in ("STATE.yaml", "state.yaml", "STATE.yml"):
+        p = agent_path / name
+        if p.exists():
+            try:
+                data = yaml.safe_load(p.read_text(errors="replace")) or {}
+                return data if isinstance(data, dict) else {}
+            except Exception:
+                pass
+    return {}
+
+
+def _read_agent_heartbeat(agent_path: pathlib.Path) -> str:
+    """Read HEARTBEAT.md excerpt."""
+    hb = agent_path / "HEARTBEAT.md"
+    if hb.exists():
+        try:
+            return hb.read_text(errors="replace")[:300]
+        except Exception:
+            pass
+    return ""
+
+
+def _get_last_memory_activity(agent_path: pathlib.Path) -> dict:
+    """Get last modified memory file info."""
+    mem_dir = agent_path / "memory"
+    if not mem_dir.exists():
+        return {}
+    try:
+        files = [f for f in mem_dir.iterdir() if f.is_file()]
+        if not files:
+            return {}
+        latest = max(files, key=lambda f: f.stat().st_mtime)
+        age_secs = time.time() - latest.stat().st_mtime
+        return {
+            "file": latest.name,
+            "age_seconds": int(age_secs),
+            "mtime": datetime.fromtimestamp(latest.stat().st_mtime).isoformat() + "Z",
+        }
+    except Exception:
+        return {}
+
+
+def _infer_agent_health(state: dict, last_activity: dict) -> dict:
+    """Infer health status from state and last activity."""
+    status_raw = str(state.get("status", "")).lower()
+
+    if status_raw in ("active", "running", "in_progress"):
+        health_status = "active"
+    elif status_raw in ("idle", "ok", ""):
+        health_status = "idle"
+    elif status_raw in ("error", "critical", "failed"):
+        health_status = "error"
+    else:
+        health_status = "idle"
+
+    # If last memory activity is recent (<1h), bump to active
+    age = last_activity.get("age_seconds", 999999)
+    if age < 3600 and health_status == "idle":
+        health_status = "active"
+
+    # Build health object
+    errors = state.get("consecutiveErrors", state.get("errors", 0))
+    if isinstance(errors, (int, float)) and int(errors) > 2:
+        health_status = "error"
+
+    score = 100
+    if health_status == "error":
+        score = 20
+    elif health_status == "idle":
+        score = 60
+    else:
+        score = 90
+
+    return {
+        "status": health_status,
+        "score": score,
+        "consecutive_errors": int(errors) if isinstance(errors, (int, float)) else 0,
+    }
+
+
+def get_all_agents_health() -> list[dict]:
+    """Collect per-agent health for all core agents + L3 bots."""
+    agents = []
+
+    for agent_def in AGENTS_REGISTRY:
+        agent_path = agent_def["path"]
+        state = _read_agent_state(agent_path)
+        last_activity = _get_last_memory_activity(agent_path)
+        health = _infer_agent_health(state, last_activity)
+
+        # Extract last action from state
+        last_action = (
+            state.get("last_action")
+            or state.get("current_task")
+            or state.get("current_step")
+            or state.get("goal")
+            or ""
+        )
+        if isinstance(last_action, (list, dict)):
+            last_action = str(last_action)
+
+        agents.append({
+            "id": agent_def["id"],
+            "name": agent_def["name"],
+            "role": agent_def["role"],
+            "status": health["status"],
+            "health_score": health["score"],
+            "consecutive_errors": health["consecutive_errors"],
+            "last_action": str(last_action)[:100],
+            "last_activity": last_activity,
+            "state_summary": {
+                k: str(v)[:80]
+                for k, v in list(state.items())[:5]
+                if k not in ("tasks", "wave_status", "done", "remaining")
+            },
+            "has_state": bool(state),
+        })
+
+    # Add L3 bots from /agents/bots/
+    if BOTS_BASE.exists():
+        for bot_dir in sorted(BOTS_BASE.iterdir()):
+            if not bot_dir.is_dir() or bot_dir.name == "archive":
+                continue
+            state = _read_agent_state(bot_dir)
+            last_activity = _get_last_memory_activity(bot_dir)
+            health = _infer_agent_health(state, last_activity)
+
+            # Read IDENTITY.md for name/role
+            name = bot_dir.name
+            role = "Fragment Bot"
+            identity_path = bot_dir / "IDENTITY.md"
+            if identity_path.exists():
+                try:
+                    id_text = identity_path.read_text(errors="replace")
+                    # Extract mission line
+                    for line in id_text.splitlines():
+                        if "**Mission**" in line or "Mission:" in line:
+                            role = line.split(":", 1)[-1].strip()[:60].lstrip("*").strip()
+                            break
+                        if "**Name**" in line:
+                            name_part = line.split(":", 1)[-1].strip().lstrip("*").strip()
+                            if name_part:
+                                name = name_part
+                except Exception:
+                    pass
+
+            last_action = (
+                state.get("current_task")
+                or state.get("current_step")
+                or state.get("status")
+                or ""
+            )
+
+            agents.append({
+                "id": bot_dir.name,
+                "name": name,
+                "role": role,
+                "status": health["status"],
+                "health_score": health["score"],
+                "consecutive_errors": health["consecutive_errors"],
+                "last_action": str(last_action)[:100],
+                "last_activity": last_activity,
+                "state_summary": {
+                    k: str(v)[:80]
+                    for k, v in list(state.items())[:4]
+                    if k not in ("tasks", "wave_status", "done", "remaining", "completed")
+                },
+                "has_state": bool(state),
+                "is_bot": True,
+            })
+
+    return agents

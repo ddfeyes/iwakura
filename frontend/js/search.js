@@ -5,13 +5,16 @@
 
 class SearchScreen {
     constructor() {
-        this._debounce  = null;
-        this._results   = [];
+        this._debounce    = null;
+        this._results     = [];
+        this._allResults  = [];  // unfiltered
         this._selectedIdx = -1;
-        this._query     = '';
-        this._input     = null;
-        this._resultsEl = null;
+        this._query       = '';
+        this._input       = null;
+        this._resultsEl   = null;
+        this._filterEl    = null;
         this._initialized = false;
+        this._activeSource = 'ALL';  // 'ALL', 'DIARY', 'MEMORY'
     }
 
     init() {
@@ -20,8 +23,11 @@ class SearchScreen {
 
         this._input     = document.getElementById('search-input');
         this._resultsEl = document.getElementById('search-results');
+        this._filterEl  = document.getElementById('search-filters');
 
         if (!this._input || !this._resultsEl) return;
+
+        this._buildFilterButtons();
 
         this._input.addEventListener('keyup', (e) => {
             if (['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return;
@@ -41,6 +47,43 @@ class SearchScreen {
                 this._activateSelected();
             }
         });
+    }
+
+    _buildFilterButtons() {
+        if (!this._filterEl) return;
+
+        const SOURCES = [
+            { key: 'ALL',    label: 'ALL',    cls: '' },
+            { key: 'DIARY',  label: 'DIARY',  cls: 'result-source-diary' },
+            { key: 'MEMORY', label: 'MEMORY', cls: 'result-source-memory' },
+        ];
+
+        this._filterEl.innerHTML = SOURCES.map(s =>
+            `<button class="search-filter-btn ${s.cls}${s.key === 'ALL' ? ' active' : ''}" data-source="${s.key}">${s.label}</button>`
+        ).join('');
+
+        this._filterEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('.search-filter-btn');
+            if (!btn) return;
+            const src = btn.dataset.source;
+            this._activeSource = src;
+
+            this._filterEl.querySelectorAll('.search-filter-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.source === src);
+            });
+
+            this._applyFilter();
+            this._render();
+        });
+    }
+
+    _applyFilter() {
+        if (this._activeSource === 'ALL') {
+            this._results = this._allResults;
+        } else {
+            this._results = this._allResults.filter(r => r.source === this._activeSource);
+        }
+        this._selectedIdx = -1;
     }
 
     focus() {
@@ -63,7 +106,8 @@ class SearchScreen {
         fetch(`/api/search?q=${encodeURIComponent(q)}`)
             .then(r => r.json())
             .then(data => {
-                this._results = data.results || [];
+                this._allResults = data.results || [];
+                this._applyFilter();
                 this._render();
             })
             .catch(() => {
