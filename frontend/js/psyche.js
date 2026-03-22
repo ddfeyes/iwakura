@@ -33,8 +33,19 @@
                 this._glitch();
             } catch (e) {
                 // Keep existing content on repeated failures; only show error on first load
-                if (this._el.querySelector('.screen-loading')) {
-                    this._el.innerHTML = '<div class="screen-loading red">INNER LAYERS INACCESSIBLE</div>';
+                if (!this._el.querySelector('.psy-header-bar')) {
+                    const msg = (e.message && e.message.includes('HTTP'))
+                        ? 'Server error — ' + e.message
+                        : 'Inner layers inaccessible';
+                    this._el.innerHTML = `
+                        <div class="error-card">
+                            <div class="error-title">FAILED TO LOAD PSYCHE</div>
+                            <div class="error-msg">${esc(msg)}</div>
+                            <button class="retry-btn" id="psyche-error-retry">↻ RETRY</button>
+                        </div>
+                    `;
+                    const btn = this._el.querySelector('#psyche-error-retry');
+                    if (btn) btn.addEventListener('click', () => this._fetch());
                 }
             }
         }

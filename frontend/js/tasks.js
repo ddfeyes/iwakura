@@ -27,8 +27,11 @@
             if (this._timer) { clearInterval(this._timer); this._timer = null; }
         }
 
-        refresh() {
-            this._fetch();
+        async refresh() {
+            const btn = document.getElementById('tasks-refresh');
+            if (btn) btn.classList.add('spinning');
+            await this._fetch();
+            if (btn) btn.classList.remove('spinning');
         }
 
         _buildFilterButtons() {
@@ -83,8 +86,19 @@
                 this._data = await res.json();
                 this._render(this._data);
             } catch (e) {
-                if (this._el.querySelector('.screen-loading')) {
-                    this._el.innerHTML = '<div class="screen-loading red">TASK DATA INACCESSIBLE</div>';
+                if (!this._el.querySelector('.task-card') && !this._el.querySelector('.tasks-metrics-bar')) {
+                    const msg = (e.message && e.message.includes('HTTP'))
+                        ? 'Server error — ' + e.message
+                        : 'Connection lost — API unreachable';
+                    this._el.innerHTML = `
+                        <div class="error-card">
+                            <div class="error-title">FAILED TO LOAD TASKS</div>
+                            <div class="error-msg">${esc(msg)}</div>
+                            <button class="retry-btn" id="tasks-error-retry">↻ RETRY</button>
+                        </div>
+                    `;
+                    const btn = this._el.querySelector('#tasks-error-retry');
+                    if (btn) btn.addEventListener('click', () => this._fetch());
                 }
             }
         }

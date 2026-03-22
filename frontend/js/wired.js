@@ -19,6 +19,7 @@ class WiredScreen {
         this._userScrolled  = false;
         this._initialized   = false;
         this._activeFilters = new Set();  // empty = show all
+        this._pollFailCount = 0;
     }
 
     // ── Lifecycle ─────────────────────────────────────────────
@@ -132,6 +133,7 @@ class WiredScreen {
             this._eventSource = new EventSource('/api/wired/stream');
 
             this._eventSource.onopen = () => {
+                this._pollFailCount = 0;
                 this._setLive(true);
             };
 
@@ -166,10 +168,30 @@ class WiredScreen {
             const res = await fetch('/api/wired');
             if (!res.ok) throw new Error('fetch failed');
             const data = await res.json();
+            this._pollFailCount = 0;
             this._applyEvents(data.events || []);
             this._setLive(true);
         } catch (_) {
+            this._pollFailCount++;
             this._setLive(false);
+            // After 3 consecutive failures with no events, show error card
+            if (this._pollFailCount >= 3 && this._events.length === 0 && this._feedEl) {
+                if (!this._feedEl.querySelector('.error-card')) {
+                    this._feedEl.innerHTML = `
+                        <div class="error-card">
+                            <div class="error-title">FAILED TO LOAD WIRED</div>
+                            <div class="error-msg">Connection lost — event stream unreachable</div>
+                            <button class="retry-btn" id="wired-error-retry">↻ RECONNECT</button>
+                        </div>
+                    `;
+                    const btn = this._feedEl.querySelector('#wired-error-retry');
+                    if (btn) btn.addEventListener('click', () => {
+                        this._pollFailCount = 0;
+                        this._feedEl.innerHTML = '<div class="wired-loading">CONNECTING TO WIRED<span class="loading-dots"></span></div>';
+                        this._connectSSE();
+                    });
+                }
+            }
         }
     }
 
