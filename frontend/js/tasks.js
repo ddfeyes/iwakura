@@ -7,11 +7,17 @@
 
     class TasksScreen {
         constructor(contentEl) {
-            this._el    = contentEl;
-            this._timer = null;
+            this._el         = contentEl;
+            this._filterEl   = null;
+            this._timer      = null;
+            this._data       = null;
+            this._activeType = 'ALL';  // 'ALL' | 'LOCAL' | 'GITHUB'
+            this._activeStatus = 'ALL'; // 'ALL' | 'RUNNING' | 'PAUSED' | 'DONE'
         }
 
         start() {
+            this._filterEl = document.getElementById('tasks-filters');
+            this._buildFilterButtons();
             this._fetch();
             if (this._timer) clearInterval(this._timer);
             this._timer = setInterval(() => this._fetch(), 15000);
@@ -25,12 +31,57 @@
             this._fetch();
         }
 
+        _buildFilterButtons() {
+            if (!this._filterEl) return;
+
+            const TYPE_BTNS = [
+                { key: 'ALL',    label: 'ALL',    cls: '' },
+                { key: 'LOCAL',  label: 'LOCAL',  cls: 'tasks-filter-local' },
+                { key: 'GITHUB', label: 'GITHUB', cls: 'tasks-filter-github' },
+            ];
+            const STATUS_BTNS = [
+                { key: 'ALL',     label: 'ANY STATUS', cls: '' },
+                { key: 'RUNNING', label: 'RUNNING',    cls: 'tasks-filter-running' },
+                { key: 'PAUSED',  label: 'PAUSED',     cls: 'tasks-filter-paused' },
+                { key: 'DONE',    label: 'DONE',       cls: 'tasks-filter-done' },
+            ];
+
+            const typeHtml   = TYPE_BTNS.map(b =>
+                `<button class="tasks-filter-btn ${b.cls}${b.key === 'ALL' ? ' active' : ''}" data-filter-type="${b.key}">${b.label}</button>`
+            ).join('');
+            const statusHtml = STATUS_BTNS.map(b =>
+                `<button class="tasks-filter-btn tasks-status-btn ${b.cls}${b.key === 'ALL' ? ' active' : ''}" data-filter-status="${b.key}">${b.label}</button>`
+            ).join('');
+
+            this._filterEl.innerHTML =
+                `<span class="tasks-filter-group">${typeHtml}</span>` +
+                `<span class="tasks-filter-sep">|</span>` +
+                `<span class="tasks-filter-group">${statusHtml}</span>`;
+
+            this._filterEl.addEventListener('click', e => {
+                const btn = e.target.closest('.tasks-filter-btn');
+                if (!btn) return;
+
+                if (btn.dataset.filterType) {
+                    this._activeType = btn.dataset.filterType;
+                    this._filterEl.querySelectorAll('[data-filter-type]').forEach(b =>
+                        b.classList.toggle('active', b.dataset.filterType === this._activeType));
+                } else if (btn.dataset.filterStatus) {
+                    this._activeStatus = btn.dataset.filterStatus;
+                    this._filterEl.querySelectorAll('[data-filter-status]').forEach(b =>
+                        b.classList.toggle('active', b.dataset.filterStatus === this._activeStatus));
+                }
+
+                if (this._data) this._render(this._data);
+            });
+        }
+
         async _fetch() {
             try {
                 const res = await fetch('/api/tasks');
                 if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                this._render(data);
+                this._data = await res.json();
+                this._render(this._data);
             } catch (e) {
                 if (this._el.querySelector('.screen-loading')) {
                     this._el.innerHTML = '<div class="screen-loading red">TASK DATA INACCESSIBLE</div>';
@@ -151,6 +202,18 @@
         _render(data) {
             const { tasks = [], metrics = {}, github_issues = [] } = data;
 
+            // Apply type filter
+            const showLocal  = this._activeType === 'ALL' || this._activeType === 'LOCAL';
+            const showGithub = this._activeType === 'ALL' || this._activeType === 'GITHUB';
+
+            // Apply status filter to local tasks
+            const filteredTasks = showLocal ? tasks.filter(t => {
+                if (this._activeStatus === 'ALL') return true;
+                return t.status === this._activeStatus;
+            }) : [];
+
+            const filteredIssues = showGithub ? github_issues : [];
+
             let html = '';
 
             // Header bar
@@ -165,16 +228,19 @@
             `;
 
             // GitHub issues section (top)
-            html += this._renderGithubIssues(github_issues);
+            html += this._renderGithubIssues(filteredIssues);
 
-            // Metrics bar
+            // Metrics bar (always shown regardless of filter)
             html += this._renderMetrics(metrics);
 
             // Task cards
-            if (tasks.length === 0) {
-                html += '<div class="screen-loading dim">NO ACTIVE TASKS</div>';
+            if (filteredTasks.length === 0 && filteredIssues.length === 0) {
+                const msg = (tasks.length > 0 || github_issues.length > 0)
+                    ? 'NO TASKS MATCH FILTER'
+                    : 'NO ACTIVE TASKS';
+                html += `<div class="screen-loading dim">${msg}</div>`;
             } else {
-                tasks.forEach(t => { html += this._renderTask(t); });
+                filteredTasks.forEach(t => { html += this._renderTask(t); });
             }
 
             this._el.innerHTML = html;

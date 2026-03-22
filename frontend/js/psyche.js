@@ -13,12 +13,15 @@
 
         init() {
             this._fetch();
+            this._fetchAgents();
             if (this._timer) clearInterval(this._timer);
             this._timer = setInterval(() => this._fetch(), 30000);
+            this._agentsTimer = setInterval(() => this._fetchAgents(), 60000);
         }
 
         stop() {
             if (this._timer) { clearInterval(this._timer); this._timer = null; }
+            if (this._agentsTimer) { clearInterval(this._agentsTimer); this._agentsTimer = null; }
         }
 
         async _fetch() {
@@ -34,6 +37,99 @@
                     this._el.innerHTML = '<div class="screen-loading red">INNER LAYERS INACCESSIBLE</div>';
                 }
             }
+        }
+
+        async _fetchAgents() {
+            try {
+                const res = await fetch('/api/psyche/agents');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                this._renderAgents(data.agents || []);
+            } catch (e) {
+                // Silently ignore — agents section is supplementary
+            }
+        }
+
+        _renderAgents(agents) {
+            // Find or create agents grid container after main content
+            let agentsEl = this._el.querySelector('.psyche-agents-grid-wrap');
+            if (!agentsEl) {
+                agentsEl = document.createElement('div');
+                agentsEl.className = 'psyche-agents-grid-wrap';
+                this._el.appendChild(agentsEl);
+            }
+
+            if (!agents || agents.length === 0) {
+                agentsEl.innerHTML = '';
+                return;
+            }
+
+            // Separate core agents from bots
+            const core = agents.filter(a => !a.is_bot);
+            const bots = agents.filter(a => a.is_bot);
+
+            const STATUS_COLOR = {
+                active: '#00ff88',
+                idle:   '#8b7cc8',
+                error:  '#ff4444',
+            };
+            const STATUS_DOT = {
+                active: '●',
+                idle:   '○',
+                error:  '✕',
+            };
+
+            function renderAgentCard(agent) {
+                const color = STATUS_COLOR[agent.status] || '#8b7cc8';
+                const dot   = STATUS_DOT[agent.status]  || '○';
+                const score = agent.health_score || 0;
+                const bars  = Math.round(score / 10);
+                const barHtml = '█'.repeat(bars) + '░'.repeat(10 - bars);
+                const lastFile = (agent.last_activity || {}).file || '';
+                const ageSecs  = (agent.last_activity || {}).age_seconds;
+                const ageStr   = ageSecs != null ? fmtAge(ageSecs) : '—';
+                const hbSecs   = (agent.heartbeat || {}).age_seconds;
+                const hbStr    = hbSecs  != null ? fmtAge(hbSecs)  : null;
+                const lastAction = (agent.last_action || '').slice(0, 60);
+                const errBadge = agent.consecutive_errors > 0
+                    ? `<span class="agent-err-badge">ERR×${agent.consecutive_errors}</span>`
+                    : '';
+
+                return `<div class="agent-card agent-card-${agent.status}">
+                    <div class="agent-card-header">
+                        <span class="agent-status-dot" style="color:${esc(color)}">${dot}</span>
+                        <span class="agent-name">${esc(agent.name)}</span>
+                        ${errBadge}
+                        <span class="agent-role dim">${esc(agent.role)}</span>
+                    </div>
+                    <div class="agent-health-bar" title="${score}/100">${barHtml}</div>
+                    ${lastAction ? `<div class="agent-last-action dim">${esc(lastAction)}</div>` : ''}
+                    <div class="agent-meta dim">
+                        ${lastFile ? `<span>${esc(lastFile)}</span>` : ''}
+                        ${ageSecs != null ? `<span>mem: ${esc(ageStr)} ago</span>` : ''}
+                        ${hbStr   != null ? `<span>hb: ${esc(hbStr)} ago</span>`  : ''}
+                    </div>
+                </div>`;
+            }
+
+            let html = `
+                <div class="psy-rule"></div>
+                <div class="psy-section-title">AGENT NETWORK</div>
+                <div class="psyche-agents-grid">
+                    ${core.map(renderAgentCard).join('')}
+                </div>
+            `;
+
+            if (bots.length > 0) {
+                html += `
+                    <div class="psy-section-title" style="margin-top:12px">FRAGMENT BOTS (L3)</div>
+                    <div class="psyche-agents-grid">
+                        ${bots.map(renderAgentCard).join('')}
+                    </div>
+                `;
+            }
+
+            agentsEl.innerHTML = html;
         }
 
         _glitch() {
@@ -331,6 +427,14 @@
         return String(s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;')
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function fmtAge(seconds) {
+        if (seconds == null) return '?';
+        if (seconds < 60)   return seconds + 's';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
+        return Math.floor(seconds / 86400) + 'd';
     }
 
     window.IwakuraPsyche = IwakuraPsyche;

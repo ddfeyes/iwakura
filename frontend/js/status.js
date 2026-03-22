@@ -19,7 +19,9 @@ class StatusDashboard {
         this._container  = null;
         this._tsEl       = null;
         this._intervalId = null;
+        this._agentsTimer = null;
         this._loading    = false;
+        this._agents     = [];
     }
 
     init(containerEl, timestampEl) {
@@ -28,6 +30,9 @@ class StatusDashboard {
         this.refresh();
         // Auto-refresh every 10s
         this._intervalId = setInterval(() => this.refresh(), 10000);
+        // Agents refresh every 60s (less frequent — file I/O heavy)
+        this._fetchAgents();
+        this._agentsTimer = setInterval(() => this._fetchAgents(), 60000);
     }
 
     stop() {
@@ -35,6 +40,19 @@ class StatusDashboard {
             clearInterval(this._intervalId);
             this._intervalId = null;
         }
+        if (this._agentsTimer) {
+            clearInterval(this._agentsTimer);
+            this._agentsTimer = null;
+        }
+    }
+
+    async _fetchAgents() {
+        try {
+            const res = await fetch('/api/psyche/agents');
+            if (!res.ok) return;
+            const data = await res.json();
+            this._agents = (data.agents || []).filter(a => !a.is_bot);
+        } catch (_) {}
     }
 
     async refresh() {
@@ -107,7 +125,7 @@ class StatusDashboard {
     }
 
     _render(el, data) {
-        const { crons = [], ao_sessions, ao_sessions_old_count, openclaw_crons, docker = [], memory = {}, lain = {} } = data;
+        const { crons = [], ao_sessions, ao_sessions_old_count, openclaw_crons, docker = [], memory = {}, lain = {}, cpu = {}, disk = {}, claude_usage = {} } = data;
         const healthScore = data.health_score ?? 100;
         const healthLabel = data.health_label || 'OPTIMAL';
         let html = '';
@@ -155,6 +173,85 @@ class StatusDashboard {
                     <span style="color:${barColor}">${pct}% USED</span>
                     <span>${esc(used)} used &nbsp;·&nbsp; ${esc(free)} free</span>
                 </div>
+            </div>
+        `;
+
+        // ── CPU Usage ────────────────────────────────────────────
+        const cpuPct   = cpu.percent || 0;
+        const cpuIdle  = cpu.idle    || (100 - cpuPct);
+        const cpuColor = cpuPct > 85 ? 'var(--red)' : cpuPct > 60 ? 'var(--orange)' : 'var(--green)';
+
+        html += `
+            <div class="status-card">
+                <div class="status-card-title">CPU USAGE</div>
+                <div class="mem-bar-wrap">
+                    <div class="mem-bar-fill" style="width:${cpuPct}%;background:${cpuColor}"></div>
+                </div>
+                <div class="mem-stats">
+                    <span style="color:${cpuColor}">${cpuPct}% USED</span>
+                    <span>${esc(String(cpuIdle))}% idle</span>
+                </div>
+            </div>
+        `;
+
+        // ── Disk Usage ───────────────────────────────────────────
+        const diskPct   = disk.percent || 0;
+        const diskUsed  = disk.used    || '?';
+        const diskFree  = disk.free    || '?';
+        const diskTotal = disk.total   || '?';
+        const diskColor = diskPct > 90 ? 'var(--red)' : diskPct > 75 ? 'var(--orange)' : 'var(--purple)';
+
+        html += `
+            <div class="status-card">
+                <div class="status-card-title">DISK USAGE${disk.mount ? ' <span class="dim">(' + esc(disk.mount) + ')</span>' : ''}</div>
+                <div class="mem-bar-wrap">
+                    <div class="mem-bar-fill" style="width:${diskPct}%;background:${diskColor}"></div>
+                </div>
+                <div class="mem-stats">
+                    <span style="color:${diskColor}">${diskPct}% USED</span>
+                    <span>${esc(diskUsed)} used &nbsp;·&nbsp; ${esc(diskFree)} free of ${esc(diskTotal)}</span>
+                </div>
+            </div>
+        `;
+
+        // ── Claude API Usage ─────────────────────────────────────
+        const cl5h   = claude_usage.tokens_5h   || 0;
+        const cl7d   = claude_usage.tokens_7d   || 0;
+        const clReq5 = claude_usage.requests_5h || 0;
+        const clReq7 = claude_usage.requests_7d || 0;
+        const clSrc  = claude_usage.source || 'n/a';
+
+        // Format token counts
+        function fmtTokens(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+            return String(n);
+        }
+
+        const modelBreakdown = claude_usage.model_breakdown_7d || {};
+        const modelRows = Object.entries(modelBreakdown).slice(0, 4).map(([model, tokens]) => `
+            <div class="srow">
+                <div class="sdot sdot-b"></div>
+                <span class="srow-label">${esc(model.split('/').pop())}</span>
+                <span class="srow-val">${esc(fmtTokens(tokens))} tokens</span>
+            </div>
+        `).join('');
+
+        html += `
+            <div class="status-card">
+                <div class="status-card-title">CLAUDE API USAGE</div>
+                <div class="srow">
+                    <div class="sdot sdot-o"></div>
+                    <span class="srow-label">5h window</span>
+                    <span class="srow-val orange">${esc(fmtTokens(cl5h))} tokens &nbsp;·&nbsp; ${clReq5} requests</span>
+                </div>
+                <div class="srow">
+                    <div class="sdot sdot-b"></div>
+                    <span class="srow-label">7d window</span>
+                    <span class="srow-val">${esc(fmtTokens(cl7d))} tokens &nbsp;·&nbsp; ${clReq7} requests</span>
+                </div>
+                ${modelRows || '<div class="srow"><span class="srow-label dim">model breakdown unavailable</span></div>'}
+                <div class="srow"><span class="srow-label dim">source: ${esc(clSrc)}</span></div>
             </div>
         `;
 
@@ -321,12 +418,67 @@ class StatusDashboard {
             </div>
         `;
 
+        // ── AGENTS MAP ───────────────────────────────────────────
+        html += this._renderAgentsMap();
+
         el.innerHTML = html;
 
         const killBtn = document.getElementById('kill-idle-btn');
         if (killBtn) {
             killBtn.addEventListener('click', () => this._killIdleSessions());
         }
+    }
+
+    _fmtHbAge(seconds) {
+        if (seconds == null) return '—';
+        if (seconds < 60)    return seconds + 's';
+        if (seconds < 3600)  return Math.floor(seconds / 60) + 'm';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
+        return Math.floor(seconds / 86400) + 'd';
+    }
+
+    _renderAgentsMap() {
+        const agents = this._agents;
+
+        const STATUS_COLOR = { active: '#00ff88', idle: '#8b7cc8', error: '#ff4444' };
+        const STATUS_DOT   = { active: '●', idle: '○', error: '✕' };
+
+        const cardHtml = (agents.length > 0 ? agents : []).map(agent => {
+            const color  = STATUS_COLOR[agent.status] || '#8b7cc8';
+            const dot    = STATUS_DOT[agent.status]  || '○';
+            const score  = agent.health_score || 0;
+            const bars   = Math.round(score / 10);
+            const barStr = '█'.repeat(bars) + '░'.repeat(10 - bars);
+            const hb     = agent.heartbeat || {};
+            const hbAge  = hb.age_seconds != null ? this._fmtHbAge(hb.age_seconds) + ' ago' : '—';
+            const errBadge = agent.consecutive_errors > 0
+                ? `<span class="agent-err-badge">ERR×${agent.consecutive_errors}</span>` : '';
+
+            return `<div class="agent-card agent-card-${esc(agent.status)}">
+                <div class="agent-card-header">
+                    <span class="agent-status-dot" style="color:${esc(color)}">${dot}</span>
+                    <span class="agent-name">${esc(agent.name)}</span>
+                    ${errBadge}
+                    <span class="agent-role dim">${esc(agent.role)}</span>
+                </div>
+                <div class="agent-health-bar" title="${score}/100">${barStr}</div>
+                <div class="agent-meta dim">
+                    <span>hb: ${esc(hbAge)}</span>
+                </div>
+            </div>`;
+        }).join('');
+
+        const placeholder = agents.length === 0
+            ? '<div class="srow"><span class="srow-label dim">LOADING AGENT DATA...</span></div>'
+            : '';
+
+        return `
+            <div class="status-card full">
+                <div class="status-card-title">AGENTS MAP (${agents.length})</div>
+                ${placeholder}
+                <div class="status-agents-grid">${cardHtml}</div>
+            </div>
+        `;
     }
 }
 

@@ -451,6 +451,19 @@ def _derive_mood(state: dict, initiative: dict, think: dict, think_delta: dict) 
         return {"label": "IDLE", "intensity": 10, "signals": signals or ["no recent activity"], "color": "#8b7cc8"}
 
 
+@app.get("/api/psyche/agents")
+async def api_psyche_agents():
+    """Per-agent health for all bots and core agents."""
+    loop = asyncio.get_event_loop()
+    agents = await loop.run_in_executor(None, sys_status.get_all_agents_health)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    return JSONResponse({
+        "timestamp": timestamp,
+        "agents": agents,
+        "total": len(agents),
+    })
+
+
 @app.get("/api/psyche")
 async def api_psyche():
     data = {}
@@ -545,10 +558,63 @@ async def fetch_github_issues() -> list[dict]:
                     "labels": [lbl["name"] for lbl in issue.get("labels", [])],
                     "created_at": issue.get("createdAt", ""),
                     "repo": repo,
+                    "type": "issue",
                 })
         except Exception:
             pass
     return issues
+
+
+async def fetch_github_prs_with_ci() -> list[dict]:
+    """Fetch open PRs from ddfeyes repos with CI status."""
+    prs = []
+    repos = ["ddfeyes/iwakura", "ddfeyes/svc-dash"]
+    for repo in repos:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "gh", "pr", "list",
+                "--repo", repo,
+                "--state", "open",
+                "--json", "number,title,labels,createdAt,headRefName,statusCheckRollup,reviewDecision,isDraft",
+                "--limit", "10",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=12)
+            raw = json.loads(stdout.decode())
+            for pr in raw:
+                # Derive CI status from statusCheckRollup
+                checks = pr.get("statusCheckRollup") or []
+                ci_status = "unknown"
+                if checks:
+                    statuses = [c.get("state", c.get("conclusion", "")).upper() for c in checks]
+                    if any(s in ("FAILURE", "FAILED", "ERROR") for s in statuses):
+                        ci_status = "failure"
+                    elif any(s in ("PENDING", "IN_PROGRESS", "QUEUED") for s in statuses):
+                        ci_status = "pending"
+                    elif all(s in ("SUCCESS", "NEUTRAL", "SKIPPED") for s in statuses):
+                        ci_status = "success"
+                    else:
+                        ci_status = "unknown"
+
+                review = pr.get("reviewDecision") or "REVIEW_REQUIRED"
+
+                prs.append({
+                    "number": pr["number"],
+                    "title": pr["title"],
+                    "labels": [lbl["name"] for lbl in pr.get("labels", [])],
+                    "created_at": pr.get("createdAt", ""),
+                    "repo": repo,
+                    "type": "pr",
+                    "branch": pr.get("headRefName", ""),
+                    "ci_status": ci_status,
+                    "review_decision": review,
+                    "is_draft": pr.get("isDraft", False),
+                    "checks_count": len(checks),
+                })
+        except Exception as e:
+            logger.debug("fetch_github_prs_with_ci failed for %s: %s", repo, e)
+    return prs
 
 
 @app.get("/api/tasks")
@@ -634,8 +700,16 @@ async def api_tasks():
                 "stats": {str(k): str(v) for k, v in stats.items()},
             })
 
-    github_issues = await fetch_github_issues()
-    return JSONResponse({"tasks": tasks_out, "metrics": metrics_out, "github_issues": github_issues})
+    github_issues, github_prs = await asyncio.gather(
+        fetch_github_issues(),
+        fetch_github_prs_with_ci(),
+    )
+    return JSONResponse({
+        "tasks": tasks_out,
+        "metrics": metrics_out,
+        "github_issues": github_issues,
+        "github_prs": github_prs,
+    })
 
 
 @app.get("/api/search")

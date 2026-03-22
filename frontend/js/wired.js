@@ -10,6 +10,7 @@ class WiredScreen {
         this._countEl       = null;
         this._updateEl      = null;
         this._liveEl        = null;
+        this._filterEl      = null;
         this._eventSource   = null;
         this._pollTimer     = null;
         this._tsTimer       = null;
@@ -17,6 +18,7 @@ class WiredScreen {
         this._knownIds      = new Set();
         this._userScrolled  = false;
         this._initialized   = false;
+        this._activeFilters = new Set();  // empty = show all
     }
 
     // ── Lifecycle ─────────────────────────────────────────────
@@ -26,6 +28,7 @@ class WiredScreen {
         this._countEl  = document.getElementById('wired-event-count');
         this._updateEl = document.getElementById('wired-last-update');
         this._liveEl   = document.getElementById('wired-live-indicator');
+        this._filterEl = document.getElementById('wired-filters');
 
         if (!this._feedEl) return;
 
@@ -40,10 +43,64 @@ class WiredScreen {
         this._feedEl.innerHTML = '<div class="wired-loading">CONNECTING TO WIRED<span class="loading-dots"></span></div>';
         this._setLive(false);
 
+        // Build source filter buttons
+        this._buildFilterButtons();
+
         // Update relative timestamps every 30s
         this._tsTimer = setInterval(() => this._refreshTimestamps(), 30000);
 
         this._connectSSE();
+    }
+
+    _buildFilterButtons() {
+        if (!this._filterEl) return;
+
+        const SOURCES = ['DIARY', 'AO', 'MEMORY', 'CRON', 'SYSTEM'];
+        const COLOR_CLASS = {
+            'DIARY':  'wired-src-orange',
+            'AO':     'wired-src-cyan',
+            'MEMORY': 'wired-src-purple',
+            'CRON':   'wired-src-green',
+            'SYSTEM': 'wired-src-yellow',
+        };
+
+        const allBtn = `<button class="wired-filter-btn wired-filter-all active" data-source="ALL">ALL</button>`;
+        const srcBtns = SOURCES.map(src => {
+            const cls = COLOR_CLASS[src] || '';
+            return `<button class="wired-filter-btn ${cls}" data-source="${src}">${src}</button>`;
+        }).join('');
+
+        this._filterEl.innerHTML = allBtn + srcBtns;
+
+        this._filterEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('.wired-filter-btn');
+            if (!btn) return;
+            const src = btn.dataset.source;
+
+            if (src === 'ALL') {
+                this._activeFilters.clear();
+                this._filterEl.querySelectorAll('.wired-filter-btn').forEach(b => {
+                    b.classList.toggle('active', b.dataset.source === 'ALL');
+                });
+            } else {
+                // Toggle this source
+                if (this._activeFilters.has(src)) {
+                    this._activeFilters.delete(src);
+                } else {
+                    this._activeFilters.add(src);
+                }
+                // If no filters active, switch to ALL
+                const allBtnEl = this._filterEl.querySelector('[data-source="ALL"]');
+                if (this._activeFilters.size === 0) {
+                    if (allBtnEl) allBtnEl.classList.add('active');
+                } else {
+                    if (allBtnEl) allBtnEl.classList.remove('active');
+                }
+                btn.classList.toggle('active', this._activeFilters.has(src));
+            }
+
+            this._render(0);
+        });
     }
 
     stop() {
@@ -137,15 +194,24 @@ class WiredScreen {
         this._updateStatus();
     }
 
+    _filteredEvents() {
+        if (this._activeFilters.size === 0) return this._events;
+        return this._events.filter(e => this._activeFilters.has(e.source));
+    }
+
     _render(newCount = 0) {
         if (!this._feedEl) return;
 
-        if (this._events.length === 0) {
-            this._feedEl.innerHTML = '<div class="wired-empty">NO SIGNAL — WIRED SILENT</div>';
+        const visible = this._filteredEvents();
+
+        if (visible.length === 0) {
+            this._feedEl.innerHTML = this._events.length === 0
+                ? '<div class="wired-empty">NO SIGNAL — WIRED SILENT</div>'
+                : '<div class="wired-empty">NO EVENTS MATCH FILTER</div>';
             return;
         }
 
-        this._feedEl.innerHTML = this._events.map(e => this._renderRow(e)).join('');
+        this._feedEl.innerHTML = visible.map(e => this._renderRow(e)).join('');
 
         // Animate the first newCount rows (newest at top)
         if (newCount > 0) {
@@ -209,9 +275,10 @@ class WiredScreen {
 
     _refreshTimestamps() {
         if (!this._feedEl) return;
+        const visible = this._filteredEvents();
         const rows = this._feedEl.querySelectorAll('.wired-row');
         rows.forEach((row, i) => {
-            const e = this._events[i];
+            const e = visible[i];
             if (!e) return;
             const tsEl = row.querySelector('.wired-ts');
             if (tsEl) tsEl.textContent = this._relTime(e.ts);
@@ -219,7 +286,13 @@ class WiredScreen {
     }
 
     _updateStatus() {
-        if (this._countEl) this._countEl.textContent = `${this._events.length} events`;
+        const total    = this._events.length;
+        const filtered = this._filteredEvents().length;
+        if (this._countEl) {
+            this._countEl.textContent = (this._activeFilters.size > 0 && filtered !== total)
+                ? `${filtered}/${total} events`
+                : `${total} events`;
+        }
         if (this._updateEl) {
             const t = new Date();
             this._updateEl.textContent = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
