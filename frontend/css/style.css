@@ -1602,3 +1602,129 @@ body.flicker { animation: flicker-pulse 100ms forwards; }
 .tasks-filter-running.active { border-color: var(--cyan);   color: var(--cyan); }
 .tasks-filter-paused.active  { border-color: var(--orange); color: var(--orange); }
 .tasks-filter-done.active    { border-color: var(--green);  color: var(--green); }
+
+/* ── Phase 7: Error state cards ──────────────────────────────────────────── */
+.error-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 2.5rem 2rem;
+    margin: 2rem auto;
+    max-width: 420px;
+    border: 1px solid rgba(255, 68, 85, 0.3);
+    background: rgba(255, 68, 85, 0.05);
+    text-align: center;
+}
+.error-title {
+    font-family: var(--font-px);
+    font-size: 0.65rem;
+    color: var(--red);
+    letter-spacing: 0.1em;
+}
+.error-msg {
+    font-size: 0.82rem;
+    color: var(--dim);
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+}
+.retry-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 68, 85, 0.5);
+    color: var(--red);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 8px 24px;
+    min-height: 44px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    transition: background 0.15s, border-color 0.15s;
+}
+.retry-btn:hover {
+    background: rgba(255, 68, 85, 0.12);
+    border-color: var(--red);
+    color: #fff;
+}
+
+/* ── Phase 7: Loading skeletons ──────────────────────────────────────────── */
+@keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.25; }
+    50%       { opacity: 0.55; }
+}
+.skeleton-line {
+    height: 9px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+    margin-bottom: 8px;
+}
+.skeleton-line.short  { width: 35%; }
+.skeleton-line.medium { width: 60%; }
+.skeleton-line.long   { width: 85%; }
+.skeleton-line.full   { width: 100%; }
+
+.skeleton-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    padding: 14px 16px;
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+/* ── Phase 7: Refresh button spinner ─────────────────────────────────────── */
+@keyframes btn-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+.refresh-btn.spinning {
+    display: inline-block;
+    animation: btn-spin 0.7s linear infinite;
+    pointer-events: none;
+    opacity: 0.65;
+}
+
+/* ── Phase 7: Responsive breakpoints ─────────────────────────────────────── */
+@media (max-width: 600px) {
+    /* Touch-friendly button sizing */
+    .back-btn,
+    .refresh-btn,
+    .kill-idle-btn { min-height: 44px; min-width: 44px; }
+
+    .tasks-filter-btn,
+    .wired-filter-btn,
+    .search-filter-btn { min-height: 40px; padding: 6px 12px; font-size: 0.7rem; }
+
+    /* Status grid: single column */
+    .status-grid { grid-template-columns: 1fr; padding: 8px; gap: 8px; }
+    .status-card.full { grid-column: span 1; }
+
+    /* Agents grids: 2 cols */
+    .psyche-agents-grid,
+    .status-agents-grid { grid-template-columns: repeat(2, 1fr); }
+
+    /* Tasks: tighter padding */
+    .tasks-grid { padding: 0 10px 10px; }
+    .task-card  { padding: 10px 12px; }
+
+    /* Screen headers */
+    .screen-header { padding: 6px 10px; gap: 6px; min-height: auto; flex-wrap: wrap; }
+    .screen-title  { font-size: 0.5rem; }
+
+    /* Psyche */
+    .psyche-grid { padding: 0 8px 8px; }
+
+    /* Wired */
+    .wired-row    { padding: 5px 10px; font-size: 0.78rem; gap: 6px; }
+    .wired-badge  { font-size: 0.65rem; min-width: 40px; }
+    .wired-filters { padding: 4px 10px; gap: 4px; }
+
+    /* Search */
+    .search-container  { padding: 0 10px 10px; }
+    .search-prompt-row { padding: 8px 0; }
+}
+
+@media (min-width: 601px) and (max-width: 900px) {
+    /* Agents grids: 3 cols */
+    .psyche-agents-grid,
+    .status-agents-grid { grid-template-columns: repeat(3, 1fr); }
+}

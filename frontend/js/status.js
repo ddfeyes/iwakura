@@ -58,8 +58,11 @@ class StatusDashboard {
     async refresh() {
         if (this._loading) return;
         this._loading = true;
+        const btn = document.getElementById('status-refresh');
+        if (btn) btn.classList.add('spinning');
         await this._load();
         this._loading = false;
+        if (btn) btn.classList.remove('spinning');
     }
 
     async _load() {
@@ -84,7 +87,9 @@ class StatusDashboard {
                 this._tsEl.textContent = 'LAST SYNC: ' + ts;
             }
         } catch (e) {
-            el.innerHTML = '<div class="screen-loading red">● CONNECTION LOST — RETRYING<span class="loading-dots"></span></div>';
+            if (!el.querySelector('.status-card')) {
+                this._showError(el, 'STATUS', e);
+            }
             if (this._tsEl) this._tsEl.textContent = 'ERROR';
         }
     }
@@ -122,6 +127,21 @@ class StatusDashboard {
         toast.textContent = msg;
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 3500);
+    }
+
+    _showError(el, section, err) {
+        const msg = (err && err.message && err.message.includes('HTTP'))
+            ? `Server error — ${err.message}`
+            : 'Connection lost — API unreachable';
+        el.innerHTML = `
+            <div class="error-card">
+                <div class="error-title">FAILED TO LOAD ${esc(section)}</div>
+                <div class="error-msg">${esc(msg)}</div>
+                <button class="retry-btn" id="status-error-retry">↻ RETRY</button>
+            </div>
+        `;
+        const btn = el.querySelector('#status-error-retry');
+        if (btn) btn.addEventListener('click', () => this.refresh());
     }
 
     _render(el, data) {
