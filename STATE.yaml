@@ -1,0 +1,39 @@
+project: iwakura
+repo: ddfeyes/iwakura
+goal: "Lain ecosystem dashboard and management interface"
+status: DONE
+
+current_module: m1-smoke-e2e
+modules:
+  - name: m1-smoke-e2e
+    status: DONE
+    description: "Smoke/E2E tests for deployed API endpoints — closes #88"
+    issues: [88]
+    prs: [104]
+    started: "2026-03-22T20:33:00Z"
+    completed: "2026-03-22T20:45:00Z"
+
+  - name: m2-prd-audit
+    status: PENDING
+    description: "Verify iw-001 (nav) and iw-004 (session) are passing, update prd.json"
+    issues: []
+    started: null
+
+blocked_reason: null
+blocked_since: null
+escalated: false
+
+deploy:
+  method: ssh
+  host: user3@94.130.65.86
+  port: 2203
+  password: "VibeUser32345001f"
+  path: /srv/gateway/html/iwakura
+  verify_url: "https://iwakura.111miniapp.com/health"
+
+last_activity: "2026-03-22T20:45:00Z"
+completed_modules:
+  - name: phase7-error-states-responsive
+    pr: 103
+    qa: PASS
+    completed: "2026-03-23T02:58:00Z"
